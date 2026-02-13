@@ -3,21 +3,52 @@
 {% block title %}Sign up | StudyCompanion+{% endblock %}
 
 {% block layout %}
-    <div class="auth-wrap">
-        <section class="auth-card">
-            <h1>Create account</h1>
-            <p>Choose your role and start the personalized learning cycle.</p>
+    <div class="auth-scene">
+        <div class="auth-bubbles" aria-hidden="true">
+            <span class="bubble bubble-a"></span>
+            <span class="bubble bubble-b"></span>
+            <span class="bubble bubble-c"></span>
+            <span class="bubble bubble-d"></span>
+            <span class="bubble bubble-e"></span>
+        </div>
 
-            {{ form_start(registrationForm, {attr: {class: 'form-grid', style: 'margin-top:1.2rem;', 'data-turbo': 'false'}}) }}
-                {{ form_row(registrationForm.name) }}
-                {{ form_row(registrationForm.email) }}
-                {{ form_row(registrationForm.role) }}
-                {{ form_row(registrationForm.grade) }}
-                {{ form_row(registrationForm.plainPassword) }}
-                <button type="submit" class="btn-primary">Create account</button>
-            {{ form_end(registrationForm) }}
+        <section class="auth-shell">
+            <aside class="auth-brand">
+                <a class="brand-lockup" href="{{ path('app_entrypoint') }}">
+                    <span class="logo-mark" aria-hidden="true">
+                        <span class="logo-core">SC</span>
+                        <span class="logo-plus">+</span>
+                    </span>
+                    <span class="brand-meta">
+                        <span class="brand-title glow-text">StudyCompanion+</span>
+                        <span class="brand-subtitle">Learn. Test. Master.</span>
+                    </span>
+                </a>
 
-            <p style="margin-top: 1rem;">Already registered? <a href="{{ path('app_login') }}" style="color: var(--brand); font-weight:700;">Sign in</a></p>
+                <h1>Create your account</h1>
+                <p>Choose student or teacher role and unlock a guided AI-powered study workflow built around your real lessons.</p>
+                <div class="auth-chips">
+                    <span>Student / Teacher Roles</span>
+                    <span>Focused Learning Mode</span>
+                    <span>Continuous Remediation</span>
+                </div>
+            </aside>
+
+            <div class="auth-card">
+                <h2>Sign up</h2>
+                <p>Start in under a minute.</p>
+
+                {{ form_start(registrationForm, {attr: {class: 'form-grid auth-form', 'data-turbo': 'false'}}) }}
+                    {{ form_row(registrationForm.name) }}
+                    {{ form_row(registrationForm.email) }}
+                    {{ form_row(registrationForm.role) }}
+                    {{ form_row(registrationForm.grade) }}
+                    {{ form_row(registrationForm.plainPassword) }}
+                    <button type="submit" class="btn-primary">Create account</button>
+                {{ form_end(registrationForm) }}
+
+                <p class="auth-switch">Already registered? <a href="{{ path('app_login') }}">Sign in</a></p>
+            </div>
         </section>
     </div>
 {% endblock %}

@@ -3,34 +3,65 @@
 {% block title %}Sign in | StudyCompanion+{% endblock %}
 
 {% block layout %}
-    <div class="auth-wrap">
-        <section class="auth-card">
-            <h1>Sign in</h1>
-            <p>Continue your personalized study workflow.</p>
+    <div class="auth-scene">
+        <div class="auth-bubbles" aria-hidden="true">
+            <span class="bubble bubble-a"></span>
+            <span class="bubble bubble-b"></span>
+            <span class="bubble bubble-c"></span>
+            <span class="bubble bubble-d"></span>
+            <span class="bubble bubble-e"></span>
+        </div>
 
-            {% if error %}
-                <div class="flash flash-error" style="margin-top: 1rem;">{{ error.messageKey|trans(error.messageData, 'security') }}</div>
-            {% endif %}
+        <section class="auth-shell">
+            <aside class="auth-brand">
+                <a class="brand-lockup" href="{{ path('app_entrypoint') }}">
+                    <span class="logo-mark" aria-hidden="true">
+                        <span class="logo-core">SC</span>
+                        <span class="logo-plus">+</span>
+                    </span>
+                    <span class="brand-meta">
+                        <span class="brand-title glow-text">StudyCompanion+</span>
+                        <span class="brand-subtitle">Personalized AI Tutor</span>
+                    </span>
+                </a>
 
-            <form method="post" action="{{ path('app_login') }}" class="form-grid" style="margin-top: 1.25rem;" data-turbo="false">
-                <div>
-                    <label for="username">Email</label>
-                    <input type="email" value="{{ last_username }}" name="_username" id="username" autocomplete="email" required autofocus>
+                <h1>Welcome back</h1>
+                <p>Sign in to continue your smart study loop, track mastery, and stay focused with adaptive training.</p>
+                <div class="auth-chips">
+                    <span>Role-Based Access</span>
+                    <span>Adaptive Quizzes</span>
+                    <span>Mastery Reports</span>
                 </div>
-                <div>
-                    <label for="password">Password</label>
-                    <input type="password" name="_password" id="password" autocomplete="current-password" required>
-                </div>
+            </aside>
 
-                <label class="note" style="display:flex; align-items:center; gap:.5rem;">
-                    <input type="checkbox" name="_remember_me" style="width:auto;"> Remember me
-                </label>
+            <div class="auth-card">
+                <h2>Sign in</h2>
+                <p>Continue your personalized study workflow.</p>
 
-                <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
-                <button type="submit" class="btn-primary">Sign in</button>
-            </form>
+                {% if error %}
+                    <div class="flash flash-error auth-flash">{{ error.messageKey|trans(error.messageData, 'security') }}</div>
+                {% endif %}
 
-            <p style="margin-top: 1rem;">New account? <a href="{{ path('app_register') }}" style="color: var(--brand); font-weight: 700;">Create one</a></p>
+                <form method="post" action="{{ path('app_login') }}" class="form-grid auth-form" data-turbo="false">
+                    <div>
+                        <label for="username">Email</label>
+                        <input type="email" value="{{ last_username }}" name="_username" id="username" autocomplete="email" required autofocus>
+                    </div>
+                    <div>
+                        <label for="password">Password</label>
+                        <input type="password" name="_password" id="password" autocomplete="current-password" required>
+                    </div>
+
+                    <label class="remember-row">
+                        <input type="checkbox" name="_remember_me"> Remember me
+                    </label>
+
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
+                    <button type="submit" class="btn-primary">Sign in</button>
+                </form>
+
+                <p class="auth-switch">New account? <a href="{{ path('app_register') }}">Create one</a></p>
+            </div>
         </section>
     </div>
 {% endblock %}
