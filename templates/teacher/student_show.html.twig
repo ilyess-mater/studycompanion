@@ -1,0 +1,49 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Student Profile | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card" style="margin-bottom:1rem;">
+        <h1>{{ student.user.name }}</h1>
+        <p>{{ student.user.email }}{% if student.grade %} | Grade {{ student.grade }}{% endif %}</p>
+    </section>
+
+    <div class="grid grid-2">
+        <section class="card">
+            <h2>Mastery Reports</h2>
+            <div class="list">
+                {% for report in reports %}
+                    <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                        <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
+                            <strong>{{ report.lesson.title }}</strong>
+                            <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span>
+                        </div>
+                        <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
+                        <div class="note">Weak topics: {{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</div>
+                    </div>
+                {% else %}
+                    <p class="note">No reports for this student.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Teacher Feedback</h2>
+            {{ form_start(commentForm, {attr: {class: 'form-grid'}}) }}
+                {{ form_row(commentForm.content) }}
+                <button type="submit" class="btn-primary">Post comment</button>
+            {{ form_end(commentForm) }}
+
+            <div class="list" style="margin-top:1rem;">
+                {% for comment in comments %}
+                    <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                        <div class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</div>
+                        <p>{{ comment.content }}</p>
+                    </div>
+                {% else %}
+                    <p class="note">No comments yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}

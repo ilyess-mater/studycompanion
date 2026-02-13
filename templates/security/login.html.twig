@@ -1,0 +1,36 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Sign in | StudyCompanion+{% endblock %}
+
+{% block layout %}
+    <div class="auth-wrap">
+        <section class="auth-card">
+            <h1>Sign in</h1>
+            <p>Continue your personalized study workflow.</p>
+
+            {% if error %}
+                <div class="flash flash-error" style="margin-top: 1rem;">{{ error.messageKey|trans(error.messageData, 'security') }}</div>
+            {% endif %}
+
+            <form method="post" action="{{ path('app_login') }}" class="form-grid" style="margin-top: 1.25rem;" data-turbo="false">
+                <div>
+                    <label for="username">Email</label>
+                    <input type="email" value="{{ last_username }}" name="_username" id="username" autocomplete="email" required autofocus>
+                </div>
+                <div>
+                    <label for="password">Password</label>
+                    <input type="password" name="_password" id="password" autocomplete="current-password" required>
+                </div>
+
+                <label class="note" style="display:flex; align-items:center; gap:.5rem;">
+                    <input type="checkbox" name="_remember_me" style="width:auto;"> Remember me
+                </label>
+
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
+                <button type="submit" class="btn-primary">Sign in</button>
+            </form>
+
+            <p style="margin-top: 1rem;">New account? <a href="{{ path('app_register') }}" style="color: var(--brand); font-weight: 700;">Create one</a></p>
+        </section>
+    </div>
+{% endblock %}

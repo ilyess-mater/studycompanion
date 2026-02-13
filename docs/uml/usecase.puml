@@ -1,0 +1,41 @@
+@startuml
+left to right direction
+actor Student
+actor Teacher
+actor "AI Engine" as AI
+actor "OS / Java Client" as OS
+
+rectangle StudyCompanion {
+  usecase "Upload Lesson" as UC1
+  usecase "Analyze Lesson" as UC2
+  usecase "Generate Materials" as UC3
+  usecase "Start Focus Mode" as UC4
+  usecase "Take Adaptive Quiz" as UC5
+  usecase "Analyze Performance" as UC6
+  usecase "Regenerate Weak-Point Content" as UC7
+  usecase "Track Mastery" as UC8
+  usecase "Manage Groups" as UC9
+  usecase "Comment on Student Progress" as UC10
+}
+
+Student --> UC1
+Student --> UC3
+Student --> UC4
+Student --> UC5
+Student --> UC8
+Teacher --> UC8
+Teacher --> UC9
+Teacher --> UC10
+AI --> UC2
+AI --> UC3
+AI --> UC6
+AI --> UC7
+OS --> UC4
+
+UC1 ..> UC2 : <<include>>
+UC2 ..> UC3 : <<include>>
+UC4 ..> UC5 : <<include>>
+UC5 ..> UC6 : <<include>>
+UC6 ..> UC7 : <<include>>
+UC7 ..> UC8 : <<include>>
+@enduml

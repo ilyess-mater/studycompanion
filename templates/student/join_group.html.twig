@@ -1,0 +1,17 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Join Group | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card" style="max-width:560px; margin:0 auto;">
+        <h1>Join Teacher Group</h1>
+        <p>Use your teacher's invite code.</p>
+        {% if student.group %}
+            <p class="note" style="margin-top:.5rem;">Current group: <strong>{{ student.group.name }}</strong></p>
+        {% endif %}
+        {{ form_start(joinForm, {attr: {class: 'form-grid', style: 'margin-top:1rem;'}}) }}
+            {{ form_row(joinForm.inviteCode) }}
+            <button type="submit" class="btn-primary">Join group</button>
+        {{ form_end(joinForm) }}
+    </section>
+{% endblock %}

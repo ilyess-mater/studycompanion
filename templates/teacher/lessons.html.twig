@@ -1,0 +1,37 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}All Lessons | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card">
+        <h1>Lessons Overview</h1>
+        <div class="table-wrap" style="margin-top:1rem;">
+            <table>
+                <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Subject</th>
+                    <th>Difficulty</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for lesson in lessons %}
+                    <tr>
+                        <td>{{ lesson.title }}</td>
+                        <td>{{ lesson.subject }}</td>
+                        <td>{{ lesson.difficulty.value }}</td>
+                        <td><span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span></td>
+                        <td>{{ lesson.createdAt|date('Y-m-d H:i') }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="note">No lessons available.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endblock %}

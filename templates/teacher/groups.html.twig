@@ -1,0 +1,33 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Teacher Groups | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <div class="grid grid-2">
+        <section class="card">
+            <h2>Create Group</h2>
+            <p>Students join using the generated invite code.</p>
+            {{ form_start(groupForm, {attr: {class: 'form-grid'}}) }}
+                {{ form_row(groupForm.name) }}
+                <button type="submit" class="btn-primary">Create group</button>
+            {{ form_end(groupForm) }}
+        </section>
+
+        <section class="card">
+            <h2>Your Groups</h2>
+            <div class="list">
+                {% for group in groups %}
+                    <a class="list-item" href="{{ path('teacher_group_show', {id: group.id}) }}">
+                        <div>
+                            <strong>{{ group.name }}</strong>
+                            <div class="note">{{ group.students|length }} students</div>
+                        </div>
+                        <span class="badge badge-done">Invite {{ group.inviteCode }}</span>
+                    </a>
+                {% else %}
+                    <p class="note">Create your first group to start tracking students.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}

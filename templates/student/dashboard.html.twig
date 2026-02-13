@@ -1,0 +1,62 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Student Dashboard | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="hero">
+        <div class="hero-panel">
+            <h1>Welcome, {{ student.user.name }}</h1>
+            <p>Track your mastery by studying, testing, and re-learning only weak points.</p>
+        </div>
+        <div class="card grid" style="gap:.7rem;">
+            <div class="metric">
+                <span class="note">Uploaded lessons</span>
+                <span class="metric-value">{{ lessons|length }}</span>
+            </div>
+            <div class="metric">
+                <span class="note">Latest reports</span>
+                <span class="metric-value">{{ reports|length }}</span>
+            </div>
+            <div class="metric">
+                <span class="note">Group</span>
+                <span class="metric-value" style="font-size:1rem;">{{ student.group ? student.group.name : 'Not joined' }}</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="grid grid-2">
+        <section class="card">
+            <h2>Recent Lessons</h2>
+            <div class="list">
+                {% for lesson in lessons %}
+                    <a class="list-item" href="{{ path('student_lesson_show', {id: lesson.id}) }}">
+                        <div>
+                            <strong>{{ lesson.title }}</strong>
+                            <div class="note">{{ lesson.subject }} | {{ lesson.createdAt|date('Y-m-d H:i') }}</div>
+                        </div>
+                        <span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span>
+                    </a>
+                {% else %}
+                    <p class="note">No lessons yet. Upload your first lesson from the Lessons page.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Latest Performance</h2>
+            <div class="list">
+                {% for report in reports %}
+                    <div class="list-item">
+                        <div>
+                            <strong>{{ report.lesson.title }}</strong>
+                            <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
+                        </div>
+                        <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span>
+                    </div>
+                {% else %}
+                    <p class="note">No quiz reports yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}

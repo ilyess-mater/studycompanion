@@ -1,0 +1,22 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Teacher Comments | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card">
+        <h1>All Comments</h1>
+        <div class="list" style="margin-top:1rem;">
+            {% for comment in comments %}
+                <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                    <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
+                        <strong>{{ comment.student.user.name }}</strong>
+                        <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                    </div>
+                    <p>{{ comment.content }}</p>
+                </div>
+            {% else %}
+                <p class="note">No comments posted yet.</p>
+            {% endfor %}
+        </div>
+    </section>
+{% endblock %}

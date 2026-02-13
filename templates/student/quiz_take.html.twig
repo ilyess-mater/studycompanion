@@ -1,0 +1,40 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Quiz | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section
+        class="quiz-shell"
+        data-controller="focus-mode"
+        data-focus-mode-duration-value="{{ durationSeconds }}"
+        data-focus-mode-focus-session-id-value="{{ focusSession.id }}"
+        data-focus-mode-violation-url-value="{{ path('student_focus_violation', {id: focusSession.id}) }}"
+    >
+        <div class="quiz-timer">
+            <strong>Focus Mode Active</strong>
+            <span data-focus-mode-target="timer">--:--</span>
+        </div>
+
+        <form method="post" class="card" data-focus-mode-target="form">
+            <input type="hidden" name="focus_session_id" value="{{ focusSession.id }}">
+
+            {% for question in quiz.questions %}
+                <article class="quiz-question">
+                    <h3>Q{{ loop.index }}. {{ question.text }}</h3>
+                    <div class="option-list">
+                        {% for option in question.options %}
+                            <label class="option-item">
+                                <input type="radio" name="answers[{{ question.id }}]" value="{{ option|e('html_attr') }}" required>
+                                <span>{{ option }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <input type="hidden" data-response-time name="response_times[{{ question.id }}]" value="">
+                </article>
+            {% endfor %}
+
+            <p class="note" style="margin-bottom:1rem;">Leaving fullscreen or switching tabs is logged as a focus violation.</p>
+            <button type="submit" class="btn-primary">Submit Quiz</button>
+        </form>
+    </section>
+{% endblock %}

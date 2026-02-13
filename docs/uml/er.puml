@@ -1,0 +1,145 @@
+@startuml
+skinparam linetype ortho
+
+entity User {
+  *id : int <<PK>>
+  --
+  name : string
+  email : string
+  password : string
+  roles : json
+  created_at : datetime
+}
+
+entity StudentProfile {
+  *id : int <<PK>>
+  --
+  user_id : int <<FK>>
+  grade : string
+  group_id : int <<FK>>
+}
+
+entity TeacherProfile {
+  *id : int <<PK>>
+  --
+  user_id : int <<FK>>
+  created_at : datetime
+}
+
+entity StudyGroup {
+  *id : int <<PK>>
+  --
+  teacher_id : int <<FK>>
+  name : string
+  invite_code : string
+}
+
+entity Lesson {
+  *id : int <<PK>>
+  --
+  title : string
+  subject : string
+  difficulty : enum
+  file_path : string
+  estimated_study_minutes : int
+  processing_status : enum
+}
+
+entity StudyMaterial {
+  *id : int <<PK>>
+  --
+  lesson_id : int <<FK>>
+  type : enum
+  summary : text
+  flashcards : json
+  content : text
+  version : int
+}
+
+entity Quiz {
+  *id : int <<PK>>
+  --
+  lesson_id : int <<FK>>
+  difficulty : enum
+  generated_at : datetime
+}
+
+entity Question {
+  *id : int <<PK>>
+  --
+  quiz_id : int <<FK>>
+  text : text
+  options : json
+  correct_answer : string
+}
+
+entity StudentAnswer {
+  *id : int <<PK>>
+  --
+  student_id : int <<FK>>
+  question_id : int <<FK>>
+  answer : string
+  is_correct : bool
+  response_time_ms : int
+}
+
+entity PerformanceReport {
+  *id : int <<PK>>
+  --
+  student_id : int <<FK>>
+  lesson_id : int <<FK>>
+  quiz_id : int <<FK>>
+  quiz_score : float
+  weak_topics : json
+  mastery_status : enum
+}
+
+entity TeacherComment {
+  *id : int <<PK>>
+  --
+  teacher_id : int <<FK>>
+  student_id : int <<FK>>
+  content : text
+}
+
+entity FocusSession {
+  *id : int <<PK>>
+  --
+  student_id : int <<FK>>
+  lesson_id : int <<FK>>
+  quiz_id : int <<FK>>
+  status : enum
+  started_at : datetime
+  ended_at : datetime
+  duration_seconds : int
+}
+
+entity FocusViolation {
+  *id : int <<PK>>
+  --
+  focus_session_id : int <<FK>>
+  type : enum
+  details : text
+  severity : int
+  occurred_at : datetime
+}
+
+User ||--o| StudentProfile
+User ||--o| TeacherProfile
+TeacherProfile ||--o{ StudyGroup
+StudyGroup ||--o{ StudentProfile
+StudentProfile ||--o{ Lesson : uploads
+Lesson ||--o{ StudyMaterial
+Lesson ||--o{ Quiz
+Quiz ||--o{ Question
+StudentProfile ||--o{ StudentAnswer
+Question ||--o{ StudentAnswer
+StudentProfile ||--o{ PerformanceReport
+Lesson ||--o{ PerformanceReport
+Quiz ||--o{ PerformanceReport
+TeacherProfile ||--o{ TeacherComment
+StudentProfile ||--o{ TeacherComment
+StudentProfile ||--o{ FocusSession
+Lesson ||--o{ FocusSession
+FocusSession ||--o{ FocusViolation
+@enduml

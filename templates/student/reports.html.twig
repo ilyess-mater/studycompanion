@@ -1,0 +1,40 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Reports | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card">
+        <h1>Performance Reports</h1>
+        <p>Track mastery status and weak topics over time.</p>
+        <div class="table-wrap" style="margin-top:1rem;">
+            <table>
+                <thead>
+                <tr>
+                    <th>Lesson</th>
+                    <th>Score</th>
+                    <th>Mastery</th>
+                    <th>Weak Topics</th>
+                    <th>Date</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for report in reports %}
+                    <tr>
+                        <td>{{ report.lesson.title }}</td>
+                        <td>{{ report.quizScore }}%</td>
+                        <td>
+                            <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span>
+                        </td>
+                        <td>{{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</td>
+                        <td>{{ report.createdAt|date('Y-m-d H:i') }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="note">No reports yet.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endblock %}

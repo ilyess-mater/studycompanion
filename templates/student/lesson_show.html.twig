@@ -1,0 +1,54 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ lesson.title }} | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card" style="margin-bottom:1rem;">
+        <h1>{{ lesson.title }}</h1>
+        <p>{{ lesson.subject }} | Difficulty: {{ lesson.difficulty.value }} | Estimated study time: {{ lesson.estimatedStudyMinutes ?? 'Pending' }} minutes</p>
+        <p class="note" style="margin-top:.55rem;">Processing status: <span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span></p>
+        {% if latestQuiz %}
+            <a href="{{ path('student_quiz_take', {id: latestQuiz.id}) }}" class="btn btn-primary" style="margin-top:1rem; display:inline-flex;">Start Adaptive Quiz</a>
+        {% endif %}
+    </section>
+
+    {% if latestReport %}
+        <section class="card" style="margin-bottom:1rem;">
+            <h2>Latest Mastery Report</h2>
+            <div class="list-item">
+                <div>
+                    <strong>Score {{ latestReport.quizScore }}%</strong>
+                    <div class="note">Weak topics: {{ latestReport.weakTopics is not empty ? latestReport.weakTopics|join(', ') : 'None' }}</div>
+                </div>
+                <span class="badge {{ latestReport.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (latestReport.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ latestReport.masteryStatus.value }}</span>
+            </div>
+        </section>
+    {% endif %}
+
+    <section class="card">
+        <h2>Generated Study Materials</h2>
+        <div class="list">
+            {% for material in materials %}
+                <article class="list-item" style="align-items:flex-start; flex-direction:column;">
+                    <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
+                        <strong>{{ material.type.value }} (v{{ material.version }})</strong>
+                        <span class="note">{{ material.createdAt|date('Y-m-d H:i') }}</span>
+                    </div>
+                    {% if material.summary %}
+                        <p>{{ material.summary }}</p>
+                    {% elseif material.flashcards %}
+                        <ul>
+                            {% for flashcard in material.flashcards %}
+                                <li><strong>{{ flashcard.front }}</strong>: {{ flashcard.back }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p>{{ material.content|nl2br }}</p>
+                    {% endif %}
+                </article>
+            {% else %}
+                <p class="note">Materials are still being generated. Refresh this page in a moment.</p>
+            {% endfor %}
+        </div>
+    </section>
+{% endblock %}

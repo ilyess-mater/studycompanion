@@ -1,0 +1,24 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ group.name }} | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card">
+        <h1>{{ group.name }}</h1>
+        <p>Invite code: <strong>{{ group.inviteCode }}</strong></p>
+        <h2 style="margin-top:1rem;">Students</h2>
+        <div class="list">
+            {% for student in group.students %}
+                <a class="list-item" href="{{ path('teacher_student_show', {id: student.id}) }}">
+                    <div>
+                        <strong>{{ student.user.name }}</strong>
+                        <div class="note">{{ student.user.email }}{% if student.grade %} | Grade {{ student.grade }}{% endif %}</div>
+                    </div>
+                    <span class="btn">View</span>
+                </a>
+            {% else %}
+                <p class="note">No students joined this group yet.</p>
+            {% endfor %}
+        </div>
+    </section>
+{% endblock %}

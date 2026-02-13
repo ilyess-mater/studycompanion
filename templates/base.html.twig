@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}StudyCompanion+{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    {% block stylesheets %}{% endblock %}
+    {% block javascripts %}
+        {% block importmap %}{{ importmap('app') }}{% endblock %}
+    {% endblock %}
+</head>
+<body>
+{% block layout %}
+    <div class="shell">
+        {% if app.user %}
+            <header class="topbar">
+                <a class="logo" href="{{ path('app_entrypoint') }}">
+                    <span class="logo-badge">SC+</span>
+                    <span>StudyCompanion+</span>
+                </a>
+                <nav class="nav" aria-label="Main">
+                    {% if is_granted('ROLE_STUDENT') %}
+                        <a href="{{ path('student_dashboard') }}">Dashboard</a>
+                        <a href="{{ path('student_lessons') }}">Lessons</a>
+                        <a href="{{ path('student_reports') }}">Reports</a>
+                        <a href="{{ path('student_group_join') }}">Join Group</a>
+                    {% endif %}
+                    {% if is_granted('ROLE_TEACHER') %}
+                        <a href="{{ path('teacher_dashboard') }}">Dashboard</a>
+                        <a href="{{ path('teacher_groups') }}">Groups</a>
+                        <a href="{{ path('teacher_lessons') }}">Lessons</a>
+                        <a href="{{ path('teacher_comments') }}">Comments</a>
+                    {% endif %}
+                    <a href="{{ path('app_logout') }}">Sign out</a>
+                </nav>
+            </header>
+        {% endif %}
+
+        {% for message in app.flashes('success') %}
+            <div class="flash flash-success">{{ message }}</div>
+        {% endfor %}
+        {% for message in app.flashes('error') %}
+            <div class="flash flash-error">{{ message }}</div>
+        {% endfor %}
+
+        {% block body %}{% endblock %}
+    </div>
+{% endblock %}
+</body>
+</html>

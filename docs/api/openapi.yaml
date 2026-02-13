@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: StudyCompanion+ Focus/API Contract
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000
+paths:
+  /api/v1/auth/token:
+    post:
+      summary: Create API bearer token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Token issued
+  /api/v1/focus-sessions:
+    post:
+      summary: Start focus session
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lessonId]
+              properties:
+                lessonId: { type: integer }
+                quizId: { type: integer }
+                durationSeconds: { type: integer }
+      responses:
+        '201': { description: Created }
+  /api/v1/focus-sessions/{id}/events:
+    post:
+      summary: Record focus violation event
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string }
+                details: { type: string }
+                severity: { type: integer }
+      responses:
+        '200': { description: Recorded }
+  /api/v1/focus-sessions/{id}/end:
+    post:
+      summary: End focus session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [COMPLETED, AUTO_SUBMITTED] }
+      responses:
+        '200': { description: Ended }
+  /api/v1/lessons/{id}/processing-status:
+    get:
+      summary: Get lesson processing status
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Status payload }
+  /api/v1/students/{id}/mastery:
+    get:
+      summary: Get mastery aggregate for a student
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Mastery payload }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
