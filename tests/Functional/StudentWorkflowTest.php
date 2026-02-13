@@ -51,7 +51,7 @@ class StudentWorkflowTest extends WebTestCase
         $crawler = $this->client->request('GET', '/student/lessons');
 
         $filePath = dirname(__DIR__).'/Fixtures/sample-lesson.txt';
-        file_put_contents($filePath, 'Sample lesson content about algebra fundamentals.');
+        file_put_contents($filePath, 'Sample lesson content about algebra fundamentals and equations.');
 
         $form = $crawler->selectButton('Upload and analyze')->form([
             'lesson_upload[title]' => 'Algebra Intro',
@@ -63,6 +63,15 @@ class StudentWorkflowTest extends WebTestCase
 
         self::assertResponseRedirects();
         self::assertStringContainsString('/student/lessons/', (string) $this->client->getResponse()->headers->get('Location'));
+
+        $lessonRepo = $entityManager->getRepository('App\\Entity\\Lesson');
+        $materialRepo = $entityManager->getRepository('App\\Entity\\StudyMaterial');
+        $quizRepo = $entityManager->getRepository('App\\Entity\\Quiz');
+
+        $lesson = $lessonRepo->findOneBy(['title' => 'Algebra Intro']);
+        self::assertNotNull($lesson, 'Lesson was not stored.');
+        self::assertGreaterThan(0, $materialRepo->count(['lesson' => $lesson]), 'AI materials were not generated.');
+        self::assertGreaterThan(0, $quizRepo->count(['lesson' => $lesson]), 'Quiz was not generated.');
 
         @unlink($filePath);
     }

@@ -4,22 +4,21 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Entity\StudentAnswer;
-use App\Entity\StudentProfile;
-use App\Enum\FocusSessionStatus;
-use App\Enum\FocusViolationType;
 use App\Entity\FocusSession;
 use App\Entity\FocusViolation;
 use App\Entity\PerformanceReport;
 use App\Entity\Quiz;
-use App\Message\GenerateMaterialsMessage;
+use App\Entity\StudentAnswer;
+use App\Entity\StudentProfile;
+use App\Enum\FocusSessionStatus;
+use App\Enum\FocusViolationType;
+use App\Service\LessonWorkflowService;
 use App\Service\PerformanceAnalyzer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -32,7 +31,7 @@ class QuizController extends AbstractController
         Request $request,
         EntityManagerInterface $entityManager,
         PerformanceAnalyzer $performanceAnalyzer,
-        MessageBusInterface $messageBus,
+        LessonWorkflowService $lessonWorkflowService,
     ): Response {
         $student = $this->currentStudentProfile();
         if ($student === null) {
@@ -89,7 +88,7 @@ class QuizController extends AbstractController
             if ($analysis['weakTopics'] !== []) {
                 $existingVersionCount = $entityManager->getRepository('App\\Entity\\StudyMaterial')->count(['lesson' => $lesson]);
                 $nextVersion = max(2, (int) floor($existingVersionCount / 4) + 1);
-                $messageBus->dispatch(new GenerateMaterialsMessage((int) $lesson?->getId(), $analysis['weakTopics'], $nextVersion));
+                $lessonWorkflowService->generateMaterials((int) $lesson?->getId(), $analysis['weakTopics'], $nextVersion);
             }
 
             $this->addFlash('success', sprintf('Quiz completed. Score: %.2f%%', $analysis['score']));
@@ -116,7 +115,7 @@ class QuizController extends AbstractController
         ]);
     }
 
-    #[Route('/student/focus/{id}/violation', name: 'student_focus_violation', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[Route('/student/focus/{id}/violation', name: 'student_focus_violation', requirements: ['id' => '\\d+'], methods: ['POST'])]
     public function logViolation(int $id, Request $request, EntityManagerInterface $entityManager): JsonResponse
     {
         $student = $this->currentStudentProfile();

@@ -3,9 +3,50 @@
 {% block title %}Reports | StudyCompanion+{% endblock %}
 
 {% block body %}
+    <div class="grid grid-2" style="margin-bottom:1rem;">
+        <section class="card">
+            <h1>Performance Reports</h1>
+            <p>Track mastery status and weak topics over time.</p>
+            <div class="grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 1rem;">
+                <div class="metric">
+                    <span class="note">Average score</span>
+                    <span class="metric-value">{{ summary.averageScore }}%</span>
+                </div>
+                <div class="metric">
+                    <span class="note">Total reports</span>
+                    <span class="metric-value">{{ summary.totalReports }}</span>
+                </div>
+                <div class="metric">
+                    <span class="note">Mastered</span>
+                    <span class="metric-value">{{ summary.masteredCount }}</span>
+                </div>
+                <div class="metric">
+                    <span class="note">Needs review / Not mastered</span>
+                    <span class="metric-value">{{ summary.needsReviewCount }} / {{ summary.notMasteredCount }}</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Teacher Feedback</h2>
+            <div class="list" style="margin-top:1rem;">
+                {% for comment in comments %}
+                    <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                        <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
+                            <strong>{{ comment.teacher.user.name }}</strong>
+                            <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                        </div>
+                        <p>{{ comment.content }}</p>
+                    </div>
+                {% else %}
+                    <p class="note">No teacher comments yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
     <section class="card">
-        <h1>Performance Reports</h1>
-        <p>Track mastery status and weak topics over time.</p>
+        <h2>All Report Entries</h2>
         <div class="table-wrap" style="margin-top:1rem;">
             <table>
                 <thead>
@@ -20,7 +61,7 @@
                 <tbody>
                 {% for report in reports %}
                     <tr>
-                        <td>{{ report.lesson.title }}</td>
+                        <td><a href="{{ path('student_lesson_show', {id: report.lesson.id}) }}">{{ report.lesson.title }}</a></td>
                         <td>{{ report.quizScore }}%</td>
                         <td>
                             <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span>

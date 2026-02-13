@@ -1,0 +1,39 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Teacher Reports | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card">
+        <h1>Student Reports</h1>
+        <div class="table-wrap" style="margin-top:1rem;">
+            <table>
+                <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Lesson</th>
+                    <th>Score</th>
+                    <th>Mastery</th>
+                    <th>Weak Topics</th>
+                    <th>Date</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for report in reports %}
+                    <tr>
+                        <td><a href="{{ path('teacher_student_show', {id: report.student.id}) }}">{{ report.student.user.name }}</a></td>
+                        <td><a href="{{ path('teacher_lesson_show', {id: report.lesson.id}) }}">{{ report.lesson.title }}</a></td>
+                        <td>{{ report.quizScore }}%</td>
+                        <td><span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span></td>
+                        <td>{{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</td>
+                        <td>{{ report.createdAt|date('Y-m-d H:i') }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="6" class="note">No reports yet.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endblock %}

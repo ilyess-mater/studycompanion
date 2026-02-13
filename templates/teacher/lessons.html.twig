@@ -4,30 +4,35 @@
 
 {% block body %}
     <section class="card">
-        <h1>Lessons Overview</h1>
+        <h1>Student Lessons Overview</h1>
+        <p>Open each lesson to inspect generated materials, quizzes, and reports.</p>
         <div class="table-wrap" style="margin-top:1rem;">
             <table>
                 <thead>
                 <tr>
                     <th>Title</th>
+                    <th>Student</th>
                     <th>Subject</th>
                     <th>Difficulty</th>
                     <th>Status</th>
                     <th>Created</th>
+                    <th>Action</th>
                 </tr>
                 </thead>
                 <tbody>
                 {% for lesson in lessons %}
                     <tr>
                         <td>{{ lesson.title }}</td>
+                        <td>{{ lesson.uploadedBy.user.name }}</td>
                         <td>{{ lesson.subject }}</td>
                         <td>{{ lesson.difficulty.value }}</td>
                         <td><span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span></td>
                         <td>{{ lesson.createdAt|date('Y-m-d H:i') }}</td>
+                        <td><a class="btn" href="{{ path('teacher_lesson_show', {id: lesson.id}) }}">Open</a></td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="5" class="note">No lessons available.</td>
+                        <td colspan="7" class="note">No lessons available for your groups.</td>
                     </tr>
                 {% endfor %}
                 </tbody>

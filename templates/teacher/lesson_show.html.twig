@@ -1,0 +1,58 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Lesson Details | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card" style="margin-bottom:1rem;">
+        <h1>{{ lesson.title }}</h1>
+        <p>{{ lesson.subject }} | Difficulty {{ lesson.difficulty.value }} | Student: <strong>{{ lesson.uploadedBy.user.name }}</strong></p>
+        <p class="note" style="margin-top:.5rem;">Status: <span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span></p>
+    </section>
+
+    <div class="grid grid-2">
+        <section class="card">
+            <h2>Generated Materials</h2>
+            <div class="list">
+                {% for material in materials %}
+                    <div class="list-item" style="align-items:flex-start; flex-direction:column;">
+                        <div style="width:100%; display:flex; justify-content:space-between;">
+                            <strong>{{ material.type.value }} v{{ material.version }}</strong>
+                            <span class="note">{{ material.createdAt|date('Y-m-d H:i') }}</span>
+                        </div>
+                        {% if material.summary %}
+                            <p>{{ material.summary }}</p>
+                        {% elseif material.flashcards %}
+                            <ul>
+                                {% for flashcard in material.flashcards|slice(0, 4) %}
+                                    <li><strong>{{ flashcard.front }}</strong>: {{ flashcard.back }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p>{{ material.content|slice(0, 300) ~ (material.content|length > 300 ? '...' : '') }}</p>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <p class="note">No generated materials found.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Performance Reports</h2>
+            <div class="list">
+                {% for report in reports %}
+                    <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                        <div style="width:100%; display:flex; justify-content:space-between;">
+                            <strong>{{ report.student.user.name }}</strong>
+                            <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span>
+                        </div>
+                        <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
+                        <div class="note">Weak topics: {{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</div>
+                    </div>
+                {% else %}
+                    <p class="note">No reports submitted yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}

@@ -43,18 +43,18 @@
         </section>
 
         <section class="card">
-            <h2>Recent Lessons</h2>
+            <h2>Recent Lessons From Your Students</h2>
             <div class="list">
                 {% for lesson in lessons %}
-                    <div class="list-item">
+                    <a class="list-item" href="{{ path('teacher_lesson_show', {id: lesson.id}) }}">
                         <div>
                             <strong>{{ lesson.title }}</strong>
-                            <div class="note">{{ lesson.subject }} | {{ lesson.createdAt|date('Y-m-d H:i') }}</div>
+                            <div class="note">{{ lesson.subject }} | {{ lesson.uploadedBy.user.name }} | {{ lesson.createdAt|date('Y-m-d H:i') }}</div>
                         </div>
                         <span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : 'badge-pending' }}">{{ lesson.processingStatus.value }}</span>
-                    </div>
+                    </a>
                 {% else %}
-                    <p class="note">No lessons found.</p>
+                    <p class="note">No student lessons found for your groups yet.</p>
                 {% endfor %}
             </div>
         </section>

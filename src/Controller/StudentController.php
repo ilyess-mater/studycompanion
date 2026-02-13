@@ -6,16 +6,16 @@ namespace App\Controller;
 
 use App\Entity\Lesson;
 use App\Entity\StudentProfile;
+use App\Entity\TeacherComment;
 use App\Enum\ProcessingStatus;
 use App\Form\JoinGroupType;
 use App\Form\LessonUploadType;
-use App\Message\AnalyzeLessonMessage;
+use App\Service\LessonWorkflowService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\String\Slugger\SluggerInterface;
@@ -55,8 +55,8 @@ class StudentController extends AbstractController
     public function lessons(
         Request $request,
         EntityManagerInterface $entityManager,
-        MessageBusInterface $messageBus,
         SluggerInterface $slugger,
+        LessonWorkflowService $lessonWorkflowService,
     ): Response {
         $student = $this->currentStudentProfile();
         if ($student === null) {
@@ -89,8 +89,8 @@ class StudentController extends AbstractController
                 $entityManager->persist($lesson);
                 $entityManager->flush();
 
-                $messageBus->dispatch(new AnalyzeLessonMessage((int) $lesson->getId()));
-                $this->addFlash('success', 'Lesson uploaded. AI analysis has started.');
+                $lessonWorkflowService->processUploadedLesson((int) $lesson->getId());
+                $this->addFlash('success', 'Lesson uploaded and processed. Study materials and quiz are ready.');
 
                 return $this->redirectToRoute('student_lesson_show', ['id' => $lesson->getId()]);
             }
@@ -185,9 +185,45 @@ class StudentController extends AbstractController
             ['createdAt' => 'DESC'],
         );
 
+        $comments = $entityManager->getRepository(TeacherComment::class)->findBy(
+            ['student' => $student],
+            ['createdAt' => 'DESC'],
+            20,
+        );
+
+        $totalReports = count($reports);
+        $averageScore = 0.0;
+        $masteredCount = 0;
+        $needsReviewCount = 0;
+        $notMasteredCount = 0;
+
+        foreach ($reports as $report) {
+            $averageScore += $report->getQuizScore();
+            $status = $report->getMasteryStatus()->value;
+            if ($status === 'MASTERED') {
+                ++$masteredCount;
+            } elseif ($status === 'NEEDS_REVIEW') {
+                ++$needsReviewCount;
+            } else {
+                ++$notMasteredCount;
+            }
+        }
+
+        if ($totalReports > 0) {
+            $averageScore = round($averageScore / $totalReports, 2);
+        }
+
         return $this->render('student/reports.html.twig', [
             'reports' => $reports,
             'student' => $student,
+            'comments' => $comments,
+            'summary' => [
+                'averageScore' => $averageScore,
+                'masteredCount' => $masteredCount,
+                'needsReviewCount' => $needsReviewCount,
+                'notMasteredCount' => $notMasteredCount,
+                'totalReports' => $totalReports,
+            ],
         ]);
     }
 

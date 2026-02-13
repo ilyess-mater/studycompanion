@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Lesson;
+use App\Entity\PerformanceReport;
 use App\Entity\StudentProfile;
 use App\Entity\StudyGroup;
 use App\Entity\TeacherComment;
 use App\Entity\TeacherProfile;
 use App\Form\StudyGroupType;
 use App\Form\TeacherCommentType;
+use App\Form\TeacherGlobalCommentType;
 use App\Service\InviteCodeGenerator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -32,7 +34,7 @@ class TeacherController extends AbstractController
         }
 
         $groups = $entityManager->getRepository(StudyGroup::class)->findBy(['teacher' => $teacher], ['id' => 'DESC']);
-        $lessons = $entityManager->getRepository(Lesson::class)->findBy([], ['createdAt' => 'DESC'], 8);
+        $lessons = $this->findTeacherLessons($entityManager, $teacher, 8);
 
         $studentsCount = 0;
         foreach ($groups as $group) {
@@ -109,10 +111,76 @@ class TeacherController extends AbstractController
     #[Route('/lessons', name: 'teacher_lessons')]
     public function lessons(EntityManagerInterface $entityManager): Response
     {
-        $lessons = $entityManager->getRepository(Lesson::class)->findBy([], ['createdAt' => 'DESC']);
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        $lessons = $this->findTeacherLessons($entityManager, $teacher);
 
         return $this->render('teacher/lessons.html.twig', [
             'lessons' => $lessons,
+        ]);
+    }
+
+    #[Route('/lessons/{id}', name: 'teacher_lesson_show', requirements: ['id' => '\\d+'])]
+    public function lessonShow(int $id, EntityManagerInterface $entityManager): Response
+    {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($id);
+        if (!$lesson instanceof Lesson) {
+            throw $this->createNotFoundException('Lesson not found.');
+        }
+
+        if (!$this->lessonBelongsToTeacher($lesson, $teacher)) {
+            throw $this->createAccessDeniedException('You can only access lessons uploaded by students in your groups.');
+        }
+
+        $materials = $entityManager->getRepository('App\\Entity\\StudyMaterial')->findBy(
+            ['lesson' => $lesson],
+            ['version' => 'DESC', 'createdAt' => 'DESC'],
+        );
+
+        $reports = $entityManager->getRepository(PerformanceReport::class)->findBy(
+            ['lesson' => $lesson],
+            ['createdAt' => 'DESC'],
+            20,
+        );
+
+        return $this->render('teacher/lesson_show.html.twig', [
+            'lesson' => $lesson,
+            'materials' => $materials,
+            'reports' => $reports,
+        ]);
+    }
+
+    #[Route('/reports', name: 'teacher_reports')]
+    public function reports(EntityManagerInterface $entityManager): Response
+    {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        $reports = $entityManager->createQueryBuilder()
+            ->select('r', 's', 'u', 'l')
+            ->from(PerformanceReport::class, 'r')
+            ->join('r.student', 's')
+            ->join('s.user', 'u')
+            ->join('r.lesson', 'l')
+            ->leftJoin('s.group', 'g')
+            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->setParameter('teacher', $teacher)
+            ->orderBy('r.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+
+        return $this->render('teacher/reports.html.twig', [
+            'reports' => $reports,
         ]);
     }
 
@@ -129,9 +197,8 @@ class TeacherController extends AbstractController
             throw $this->createNotFoundException('Student not found.');
         }
 
-        $group = $student->getGroup();
-        if ($group === null || $group->getTeacher()?->getId() !== $teacher->getId()) {
-            throw $this->createAccessDeniedException('You can only view students in your groups.');
+        if (!$this->studentBelongsToTeacher($student, $teacher)) {
+            throw $this->createAccessDeniedException('You can only view students assigned to you or currently unassigned.');
         }
 
         $comment = new TeacherComment();
@@ -148,7 +215,7 @@ class TeacherController extends AbstractController
             return $this->redirectToRoute('teacher_student_show', ['id' => $student->getId()]);
         }
 
-        $reports = $entityManager->getRepository('App\\Entity\\PerformanceReport')->findBy(
+        $reports = $entityManager->getRepository(PerformanceReport::class)->findBy(
             ['student' => $student],
             ['createdAt' => 'DESC'],
             20,
@@ -169,11 +236,38 @@ class TeacherController extends AbstractController
     }
 
     #[Route('/comments', name: 'teacher_comments')]
-    public function comments(EntityManagerInterface $entityManager): Response
+    public function comments(Request $request, EntityManagerInterface $entityManager): Response
     {
         $teacher = $this->currentTeacherProfile();
         if ($teacher === null) {
             throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        $students = $this->findTeacherStudents($entityManager, $teacher);
+
+        $form = $this->createForm(TeacherGlobalCommentType::class, null, ['students' => $students]);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            /** @var array{student: StudentProfile, content: string} $data */
+            $data = $form->getData();
+            $student = $data['student'];
+
+            if (!$this->studentBelongsToTeacher($student, $teacher)) {
+                throw $this->createAccessDeniedException('Selected student is not in your groups.');
+            }
+
+            $comment = (new TeacherComment())
+                ->setTeacher($teacher)
+                ->setStudent($student)
+                ->setContent(trim($data['content']));
+
+            $entityManager->persist($comment);
+            $entityManager->flush();
+
+            $this->addFlash('success', 'Comment posted to '.$student->getUser()?->getName().'.');
+
+            return $this->redirectToRoute('teacher_comments');
         }
 
         $comments = $entityManager->getRepository(TeacherComment::class)->findBy(
@@ -184,6 +278,8 @@ class TeacherController extends AbstractController
 
         return $this->render('teacher/comments.html.twig', [
             'comments' => $comments,
+            'commentForm' => $form,
+            'students' => $students,
         ]);
     }
 
@@ -197,4 +293,63 @@ class TeacherController extends AbstractController
 
         return $user->getTeacherProfile();
     }
+
+    /**
+     * @return list<Lesson>
+     */
+    private function findTeacherLessons(EntityManagerInterface $entityManager, TeacherProfile $teacher, ?int $limit = null): array
+    {
+        $qb = $entityManager->createQueryBuilder()
+            ->select('l', 's', 'u')
+            ->from(Lesson::class, 'l')
+            ->join('l.uploadedBy', 's')
+            ->join('s.user', 'u')
+            ->leftJoin('s.group', 'g')
+            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->setParameter('teacher', $teacher)
+            ->orderBy('l.createdAt', 'DESC');
+
+        if ($limit !== null) {
+            $qb->setMaxResults($limit);
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * @return list<StudentProfile>
+     */
+    private function findTeacherStudents(EntityManagerInterface $entityManager, TeacherProfile $teacher): array
+    {
+        return $entityManager->createQueryBuilder()
+            ->select('s', 'u', 'g')
+            ->from(StudentProfile::class, 's')
+            ->join('s.user', 'u')
+            ->leftJoin('s.group', 'g')
+            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->setParameter('teacher', $teacher)
+            ->orderBy('u.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    private function lessonBelongsToTeacher(Lesson $lesson, TeacherProfile $teacher): bool
+    {
+        $student = $lesson->getUploadedBy();
+
+        return $student instanceof StudentProfile && $this->studentBelongsToTeacher($student, $teacher);
+    }
+
+    private function studentBelongsToTeacher(StudentProfile $student, TeacherProfile $teacher): bool
+    {
+        $group = $student->getGroup();
+        if ($group === null) {
+            return true;
+        }
+
+        return $group->getTeacher()?->getId() === $teacher->getId();
+    }
 }
+
+
+
