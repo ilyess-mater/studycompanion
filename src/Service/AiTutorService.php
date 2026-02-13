@@ -107,22 +107,46 @@ PROMPT;
     }
 
     /**
+     * @param array{
+     *     title?: string,
+     *     subject?: string,
+     *     difficulty?: string,
+     *     topics?: list<string>,
+     *     keyConcepts?: list<string>,
+     *     weakTopics?: list<string>
+     * } $context
      * @return list<array{text:string, options:list<string>, correctAnswer:string}>
      */
-    public function generateQuizQuestions(string $text, int $count = 8): array
+    public function generateQuizQuestions(string $text, int $count = 8, array $context = []): array
     {
+        $metadata = $this->buildQuizMetadata($context);
+        $topicHints = $this->normalizeStringList($context['topics'] ?? []);
+        $weakTopicHints = $this->normalizeStringList($context['weakTopics'] ?? []);
+
         $prompt = <<<PROMPT
-Generate {$count} multiple-choice questions for this lesson.
+Generate {$count} multiple-choice questions for this exact uploaded lesson.
+Use lesson metadata and excerpt together.
+Rules:
+- Questions must test understanding of concrete lesson concepts, not generic study advice.
+- Every question must be tied to a specific lesson topic.
+- Include 4 options and 1 correct answer that is present in options.
 Return strict JSON array of objects:
 [{"text":"...","options":["A","B","C","D"],"correctAnswer":"..."}]
+Lesson metadata:
+{$metadata}
+Priority topics:
+{$this->formatHintList($topicHints)}
+Weak topics to reinforce:
+{$this->formatHintList($weakTopicHints)}
 Lesson:
 {$this->limit($text, 12000)}
 PROMPT;
 
         $data = $this->requestJson($prompt);
+        $questions = [];
 
         if (is_array($data) && array_is_list($data)) {
-            $questions = [];
+            $seenTexts = [];
             foreach ($data as $row) {
                 if (!is_array($row)) {
                     continue;
@@ -132,27 +156,41 @@ PROMPT;
                 $options = $this->normalizeStringList($row['options'] ?? []);
                 $correct = trim((string) ($row['correctAnswer'] ?? ''));
 
-                if ($textValue === '' || count($options) < 2 || $correct === '') {
+                if ($textValue === '' || $correct === '') {
                     continue;
                 }
 
                 if (!in_array($correct, $options, true)) {
+                    array_unshift($options, $correct);
+                }
+
+                $options = array_values(array_unique($options));
+                if (count($options) < 2) {
+                    continue;
+                }
+
+                $options = array_slice($options, 0, 4);
+                if (!in_array($correct, $options, true)) {
                     $options[0] = $correct;
                 }
 
+                $questionKey = mb_strtolower(preg_replace('/\s+/', ' ', $textValue) ?? '');
+                if ($questionKey === '' || isset($seenTexts[$questionKey])) {
+                    continue;
+                }
+                $seenTexts[$questionKey] = true;
+
                 $questions[] = [
                     'text' => $textValue,
-                    'options' => array_slice($options, 0, 4),
+                    'options' => $options,
                     'correctAnswer' => $correct,
                 ];
             }
-
-            if ($questions !== []) {
-                return $questions;
-            }
         }
 
-        return $this->fallbackQuiz($text, $count);
+        $fallback = $this->fallbackQuiz($text, $count, $context);
+
+        return $this->mergeUniqueQuestions($questions, $fallback, $count);
     }
 
     /**
@@ -187,12 +225,7 @@ PROMPT;
                 return null;
             }
 
-            $decoded = json_decode($content, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return null;
-            }
-
-            return $decoded;
+            return $this->decodeModelJson($content);
         } catch (TransportException|\Throwable) {
             return null;
         }
@@ -283,32 +316,240 @@ PROMPT;
     }
 
     /**
+     * @param array{
+     *     title?: string,
+     *     subject?: string,
+     *     difficulty?: string,
+     *     topics?: list<string>,
+     *     keyConcepts?: list<string>,
+     *     weakTopics?: list<string>
+     * } $context
      * @return list<array{text:string, options:list<string>, correctAnswer:string}>
      */
-    private function fallbackQuiz(string $text, int $count): array
+    private function fallbackQuiz(string $text, int $count, array $context = []): array
     {
         $sentences = $this->sentenceChunks($text);
-        if ($sentences === []) {
-            $sentences = ['The lesson focuses on understanding key concepts and applying them correctly.'];
+        $topicPool = $this->normalizeStringList($context['topics'] ?? []);
+        $keyConceptPool = $this->normalizeStringList($context['keyConcepts'] ?? []);
+        $weakTopicPool = $this->normalizeStringList($context['weakTopics'] ?? []);
+
+        $focusPool = array_values(array_unique(array_merge(
+            $weakTopicPool,
+            $topicPool,
+            $keyConceptPool,
+            array_slice($sentences, 0, 16),
+        )));
+
+        if ($focusPool === []) {
+            $fallbackFocus = trim((string) ($context['title'] ?? 'Core lesson concept'));
+            $focusPool = [$fallbackFocus !== '' ? $fallbackFocus : 'Core lesson concept'];
+        }
+
+        $title = trim((string) ($context['title'] ?? 'the lesson'));
+        $subject = trim((string) ($context['subject'] ?? 'the subject'));
+        $keywords = $this->extractKeywords($text, 24);
+        if ($keywords === []) {
+            $keywords = array_map(
+                static fn (string $item): string => mb_substr($item, 0, 28),
+                array_slice($focusPool, 0, 24),
+            );
         }
 
         $questions = [];
         for ($i = 0; $i < $count; ++$i) {
-            $topic = $sentences[$i % count($sentences)];
-            $correct = 'Key idea from topic '.($i + 1);
+            $focus = $focusPool[$i % count($focusPool)];
+            $relatedKeyword = $keywords[$i % count($keywords)];
+            $distractorOne = $focusPool[($i + 1) % count($focusPool)];
+            $distractorTwo = $focusPool[($i + 2) % count($focusPool)];
+
+            $correct = sprintf('It explains "%s" in the context of %s.', $focus, $subject);
             $questions[] = [
-                'text' => sprintf('Which statement best matches this lesson point: "%s"?', mb_substr($topic, 0, 110)),
+                'text' => sprintf(
+                    'In %s, what best describes the concept "%s" linked to "%s"?',
+                    $title === '' ? 'this lesson' : $title,
+                    mb_substr($focus, 0, 70),
+                    mb_substr($relatedKeyword, 0, 40),
+                ),
                 'options' => [
                     $correct,
-                    'Unrelated memorization detail',
-                    'Contradictory interpretation',
-                    'Random external topic',
+                    sprintf('It only repeats "%s" without relation to %s.', mb_substr($distractorOne, 0, 42), $subject),
+                    sprintf('It replaces "%s" entirely with "%s".', mb_substr($focus, 0, 30), mb_substr($distractorTwo, 0, 30)),
+                    sprintf('It is unrelated to the %s lesson content.', $subject),
                 ],
                 'correctAnswer' => $correct,
             ];
         }
 
         return $questions;
+    }
+
+    /**
+     * @return list<array{text:string, options:list<string>, correctAnswer:string}>
+     */
+    private function mergeUniqueQuestions(array $primary, array $fallback, int $count): array
+    {
+        $result = [];
+        $seen = [];
+
+        foreach (array_merge($primary, $fallback) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $text = trim((string) ($row['text'] ?? ''));
+            $correct = trim((string) ($row['correctAnswer'] ?? ''));
+            $options = $this->normalizeStringList($row['options'] ?? []);
+
+            if ($text === '' || $correct === '' || $options === []) {
+                continue;
+            }
+
+            if (!in_array($correct, $options, true)) {
+                array_unshift($options, $correct);
+            }
+
+            $options = array_values(array_unique(array_slice($options, 0, 4)));
+            if (!in_array($correct, $options, true)) {
+                $options[0] = $correct;
+            }
+
+            if (count($options) < 2) {
+                continue;
+            }
+
+            $key = mb_strtolower(preg_replace('/\s+/', ' ', $text) ?? '');
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $result[] = [
+                'text' => $text,
+                'options' => $options,
+                'correctAnswer' => $correct,
+            ];
+
+            if (count($result) >= $count) {
+                break;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array{
+     *     title?: string,
+     *     subject?: string,
+     *     difficulty?: string,
+     *     topics?: list<string>,
+     *     keyConcepts?: list<string>,
+     *     weakTopics?: list<string>
+     * } $context
+     */
+    private function buildQuizMetadata(array $context): string
+    {
+        $parts = [];
+
+        $title = trim((string) ($context['title'] ?? ''));
+        if ($title !== '') {
+            $parts[] = 'Title: '.$title;
+        }
+
+        $subject = trim((string) ($context['subject'] ?? ''));
+        if ($subject !== '') {
+            $parts[] = 'Subject: '.$subject;
+        }
+
+        $difficulty = trim((string) ($context['difficulty'] ?? ''));
+        if ($difficulty !== '') {
+            $parts[] = 'Difficulty: '.$difficulty;
+        }
+
+        $keyConcepts = $this->normalizeStringList($context['keyConcepts'] ?? []);
+        if ($keyConcepts !== []) {
+            $parts[] = 'Key concepts: '.implode('; ', array_slice($keyConcepts, 0, 10));
+        }
+
+        return $parts === [] ? 'No metadata provided' : implode("\n", $parts);
+    }
+
+    /**
+     * @param list<string> $items
+     */
+    private function formatHintList(array $items): string
+    {
+        if ($items === []) {
+            return 'None';
+        }
+
+        return implode('; ', array_slice($items, 0, 12));
+    }
+
+    /**
+     * @return array<string, mixed>|list<mixed>|null
+     */
+    private function decodeModelJson(string $content): array|null
+    {
+        $trimmed = trim($content);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $decoded = json_decode($trimmed, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $decoded;
+        }
+
+        if (preg_match('/```(?:json)?\s*(.+?)\s*```/is', $trimmed, $matches) === 1) {
+            $decoded = json_decode(trim($matches[1]), true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        if (preg_match('/(\{[\s\S]+\}|\[[\s\S]+\])/m', $trimmed, $matches) === 1) {
+            $decoded = json_decode(trim($matches[1]), true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractKeywords(string $text, int $limit = 20): array
+    {
+        $normalized = mb_strtolower($text);
+        preg_match_all('/[a-z][a-z0-9\-]{3,}/u', $normalized, $matches);
+        $words = $matches[0] ?? [];
+
+        if ($words === []) {
+            return [];
+        }
+
+        $stopWords = [
+            'about', 'after', 'again', 'against', 'because', 'before', 'between',
+            'could', 'every', 'first', 'from', 'have', 'into', 'lesson', 'more',
+            'other', 'should', 'their', 'there', 'these', 'those', 'through',
+            'under', 'using', 'what', 'when', 'where', 'which', 'while', 'with',
+            'your', 'this', 'that', 'they', 'them', 'were', 'will', 'than',
+        ];
+
+        $freq = [];
+        foreach ($words as $word) {
+            if (in_array($word, $stopWords, true)) {
+                continue;
+            }
+            $freq[$word] = ($freq[$word] ?? 0) + 1;
+        }
+
+        arsort($freq);
+
+        return array_slice(array_keys($freq), 0, $limit);
     }
 
     /**

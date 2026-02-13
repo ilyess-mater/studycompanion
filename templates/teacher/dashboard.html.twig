@@ -3,30 +3,146 @@
 {% block title %}Teacher Dashboard | StudyCompanion+{% endblock %}
 
 {% block body %}
-    <section class="hero">
-        <div class="hero-panel">
+    <section class="dashboard-hero">
+        <div class="dashboard-hero-main">
+            <span class="hero-eyebrow">Teacher Control Center</span>
             <h1>Teacher Dashboard</h1>
-            <p>Monitor student mastery, weak points, and remediation outcomes.</p>
-        </div>
-        <div class="card grid" style="gap:.7rem;">
-            <div class="metric">
-                <span class="note">Groups</span>
-                <span class="metric-value">{{ groups|length }}</span>
-            </div>
-            <div class="metric">
-                <span class="note">Students monitored</span>
-                <span class="metric-value">{{ studentsCount }}</span>
-            </div>
-            <div class="metric">
-                <span class="note">Recent lessons</span>
-                <span class="metric-value">{{ lessons|length }}</span>
+            <p>Monitor mastery trends, detect weak-topic patterns, and intervene early with focused guidance.</p>
+            <div class="hero-badges">
+                <span>{{ dashboard.groupsCount }} groups</span>
+                <span>{{ dashboard.studentsCount }} students monitored</span>
+                <span>{{ dashboard.reportsCount }} reports analyzed</span>
             </div>
         </div>
+        <aside class="hero-action">
+            <h2>System Focus</h2>
+            <p>Current mastery rate across monitored reports.</p>
+            <div class="hero-action-meter">
+                <div style="display:flex; justify-content:space-between; font-size:.8rem; color:var(--muted); margin-bottom:.35rem;">
+                    <span>Mastery rate</span>
+                    <strong style="color:#1c469d;">{{ dashboard.masteryRate }}%</strong>
+                </div>
+                <div class="hero-action-track">
+                    <div class="hero-action-fill" style="width: {{ dashboard.masteryRate }}%;"></div>
+                </div>
+            </div>
+            <p class="note" style="margin-top:.75rem;">Students without group assignment: {{ dashboard.studentsWithoutGroup }}</p>
+        </aside>
+    </section>
+
+    <section class="kpi-grid">
+        <article class="kpi-card">
+            <div class="kpi-label">Average Score</div>
+            <div class="kpi-value">{{ dashboard.averageScore }}%</div>
+            <div class="kpi-note">Across recent monitored reports</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-label">Mastered</div>
+            <div class="kpi-value">{{ dashboard.masteredCount }}</div>
+            <div class="kpi-note">{{ dashboard.needsReviewCount }} needs review</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-label">Not Mastered</div>
+            <div class="kpi-value">{{ dashboard.notMasteredCount }}</div>
+            <div class="kpi-note">Students requiring urgent support</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-label">Recent Lessons</div>
+            <div class="kpi-value">{{ dashboard.lessonsCount }}</div>
+            <div class="kpi-note">From your student network</div>
+        </article>
     </section>
 
     <div class="grid grid-2">
-        <section class="card">
-            <h2>Your Groups</h2>
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Group Insights</h2>
+                <span class="pill">Performance Snapshot</span>
+            </div>
+            <div class="list">
+                {% for row in dashboard.groupInsights %}
+                    <a class="list-item" href="{{ path('teacher_group_show', {id: row.group.id}) }}">
+                        <div>
+                            <strong>{{ row.group.name }}</strong>
+                            <div class="note">{{ row.studentsCount }} students | {{ row.reportsCount }} reports</div>
+                        </div>
+                        <span class="badge {{ row.averageScore is not null and row.averageScore >= 75 ? 'badge-mastered' : (row.averageScore is not null and row.averageScore >= 60 ? 'badge-needs-review' : 'badge-not-mastered') }}">
+                            {{ row.averageScore is null ? 'No score yet' : row.averageScore ~ '%' }}
+                        </span>
+                    </a>
+                {% else %}
+                    <p class="note">No groups yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Top Weak Topics</h2>
+                <span class="pill">Intervention Targets</span>
+            </div>
+            {% if dashboard.topWeakTopics is not empty %}
+                <div class="chip-list">
+                    {% for topic in dashboard.topWeakTopics %}
+                        <span class="chip">{{ topic }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="note">Weak-topic trends will appear once students complete more quizzes.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <div class="grid grid-2">
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Students Requiring Attention</h2>
+                <span class="pill">At Risk</span>
+            </div>
+            <div class="risk-list">
+                {% for row in dashboard.atRiskStudents %}
+                    <a class="risk-item" href="{{ path('teacher_student_show', {id: row.student.id}) }}">
+                        <div class="risk-main">
+                            <strong>{{ row.student.user.name }}</strong>
+                            <div class="note">{{ row.lastStatus }} | {{ row.student.group ? row.student.group.name : 'No group' }}</div>
+                        </div>
+                        <div class="risk-score">{{ row.averageScore }}%</div>
+                    </a>
+                {% else %}
+                    <p class="note">No at-risk students detected from recent reports.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Recent Reports</h2>
+                <span class="pill">Live Activity</span>
+            </div>
+            <div class="report-list">
+                {% for report in dashboard.recentReports %}
+                    <div class="report-item">
+                        <div class="report-main">
+                            <strong>{{ report.student.user.name }} • {{ report.lesson.title }}</strong>
+                            <div class="note">{{ report.createdAt|date('Y-m-d H:i') }}</div>
+                        </div>
+                        <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">
+                            {{ report.quizScore }}%
+                        </span>
+                    </div>
+                {% else %}
+                    <p class="note">No recent report activity.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
+    <div class="grid grid-2">
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Your Groups</h2>
+                <span class="pill">Management</span>
+            </div>
             <div class="list">
                 {% for group in groups %}
                     <a class="list-item" href="{{ path('teacher_group_show', {id: group.id}) }}">
@@ -42,8 +158,11 @@
             </div>
         </section>
 
-        <section class="card">
-            <h2>Recent Lessons From Your Students</h2>
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Recent Lessons From Students</h2>
+                <span class="pill">{{ lessons|length }} latest</span>
+            </div>
             <div class="list">
                 {% for lesson in lessons %}
                     <a class="list-item" href="{{ path('teacher_lesson_show', {id: lesson.id}) }}">

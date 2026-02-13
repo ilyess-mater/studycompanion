@@ -48,6 +48,7 @@
                         <a class="sidebar-link {{ currentRoute starts with 'teacher_lesson' ? 'is-active' : '' }}" href="{{ path('teacher_lessons') }}">Lessons</a>
                         <a class="sidebar-link {{ currentRoute == 'teacher_reports' or currentRoute == 'teacher_student_show' ? 'is-active' : '' }}" href="{{ path('teacher_reports') }}">Reports</a>
                         <a class="sidebar-link {{ currentRoute == 'teacher_comments' ? 'is-active' : '' }}" href="{{ path('teacher_comments') }}">Comments</a>
+                        <a class="sidebar-link {{ currentRoute == 'admin_health_check' ? 'is-active' : '' }}" href="{{ path('admin_health_check') }}">Health Check</a>
                     {% endif %}
                 </nav>
 

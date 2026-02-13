@@ -35,17 +35,148 @@ class TeacherController extends AbstractController
 
         $groups = $entityManager->getRepository(StudyGroup::class)->findBy(['teacher' => $teacher], ['id' => 'DESC']);
         $lessons = $this->findTeacherLessons($entityManager, $teacher, 8);
+        $students = $this->findTeacherStudents($entityManager, $teacher);
 
         $studentsCount = 0;
         foreach ($groups as $group) {
             $studentsCount += $group->getStudents()->count();
         }
 
+        $reports = $entityManager->createQueryBuilder()
+            ->select('r', 's', 'u', 'l')
+            ->from(PerformanceReport::class, 'r')
+            ->join('r.student', 's')
+            ->join('s.user', 'u')
+            ->join('r.lesson', 'l')
+            ->leftJoin('s.group', 'g')
+            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->setParameter('teacher', $teacher)
+            ->orderBy('r.createdAt', 'DESC')
+            ->setMaxResults(120)
+            ->getQuery()
+            ->getResult();
+
+        $averageScore = 0.0;
+        $masteredCount = 0;
+        $needsReviewCount = 0;
+        $notMasteredCount = 0;
+        $weakTopicFrequency = [];
+        $studentStats = [];
+
+        foreach ($reports as $report) {
+            $averageScore += $report->getQuizScore();
+
+            $status = $report->getMasteryStatus()->value;
+            if ($status === 'MASTERED') {
+                ++$masteredCount;
+            } elseif ($status === 'NEEDS_REVIEW') {
+                ++$needsReviewCount;
+            } else {
+                ++$notMasteredCount;
+            }
+
+            foreach ($report->getWeakTopics() as $weakTopic) {
+                $topic = trim((string) $weakTopic);
+                if ($topic === '') {
+                    continue;
+                }
+                $weakTopicFrequency[$topic] = ($weakTopicFrequency[$topic] ?? 0) + 1;
+            }
+
+            $studentId = $report->getStudent()?->getId();
+            if ($studentId === null) {
+                continue;
+            }
+
+            if (!isset($studentStats[$studentId])) {
+                $studentStats[$studentId] = [
+                    'student' => $report->getStudent(),
+                    'total' => 0,
+                    'sum' => 0.0,
+                    'lastStatus' => $status,
+                ];
+            }
+
+            ++$studentStats[$studentId]['total'];
+            $studentStats[$studentId]['sum'] += $report->getQuizScore();
+            $studentStats[$studentId]['lastStatus'] = $status;
+        }
+
+        if ($reports !== []) {
+            $averageScore = round($averageScore / count($reports), 2);
+        }
+
+        $atRiskStudents = [];
+        foreach ($studentStats as $stat) {
+            $avg = $stat['total'] > 0 ? ($stat['sum'] / $stat['total']) : 0.0;
+            if ($avg < 60 || $stat['lastStatus'] === 'NOT_MASTERED') {
+                $atRiskStudents[] = [
+                    'student' => $stat['student'],
+                    'averageScore' => round($avg, 1),
+                    'lastStatus' => $stat['lastStatus'],
+                ];
+            }
+        }
+
+        usort($atRiskStudents, static function (array $a, array $b): int {
+            return $a['averageScore'] <=> $b['averageScore'];
+        });
+        $atRiskStudents = array_slice($atRiskStudents, 0, 6);
+
+        $groupInsights = [];
+        foreach ($groups as $group) {
+            $groupStudentIds = [];
+            foreach ($group->getStudents() as $student) {
+                $groupStudentIds[] = $student->getId();
+            }
+
+            $groupAverage = 0.0;
+            $groupReports = 0;
+            foreach ($reports as $report) {
+                $studentId = $report->getStudent()?->getId();
+                if ($studentId !== null && in_array($studentId, $groupStudentIds, true)) {
+                    ++$groupReports;
+                    $groupAverage += $report->getQuizScore();
+                }
+            }
+
+            $groupInsights[] = [
+                'group' => $group,
+                'studentsCount' => count($groupStudentIds),
+                'reportsCount' => $groupReports,
+                'averageScore' => $groupReports > 0 ? round($groupAverage / $groupReports, 1) : null,
+            ];
+        }
+
+        arsort($weakTopicFrequency);
+        usort($groupInsights, static function (array $a, array $b): int {
+            $avgA = $a['averageScore'] ?? -1;
+            $avgB = $b['averageScore'] ?? -1;
+
+            return $avgB <=> $avgA;
+        });
+
         return $this->render('teacher/dashboard.html.twig', [
             'teacher' => $teacher,
             'groups' => $groups,
             'lessons' => $lessons,
             'studentsCount' => $studentsCount,
+            'dashboard' => [
+                'studentsCount' => $studentsCount,
+                'groupsCount' => count($groups),
+                'lessonsCount' => count($lessons),
+                'reportsCount' => count($reports),
+                'averageScore' => $averageScore,
+                'masteredCount' => $masteredCount,
+                'needsReviewCount' => $needsReviewCount,
+                'notMasteredCount' => $notMasteredCount,
+                'masteryRate' => $reports === [] ? 0 : (int) round(($masteredCount / count($reports)) * 100),
+                'studentsWithoutGroup' => count(array_filter($students, static fn (StudentProfile $student): bool => $student->getGroup() === null)),
+                'topWeakTopics' => array_slice(array_keys($weakTopicFrequency), 0, 5),
+                'atRiskStudents' => $atRiskStudents,
+                'groupInsights' => $groupInsights,
+                'recentReports' => array_slice($reports, 0, 6),
+            ],
         ]);
     }
 

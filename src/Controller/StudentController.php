@@ -32,22 +32,122 @@ class StudentController extends AbstractController
             throw $this->createAccessDeniedException('Student profile is missing.');
         }
 
-        $lessons = $entityManager->getRepository(Lesson::class)->findBy(
+        $recentLessons = $entityManager->getRepository(Lesson::class)->findBy(
             ['uploadedBy' => $student],
             ['createdAt' => 'DESC'],
             6,
         );
 
-        $reports = $entityManager->getRepository('App\\Entity\\PerformanceReport')->findBy(
+        $allLessons = $entityManager->getRepository(Lesson::class)->findBy(
+            ['uploadedBy' => $student],
+            ['createdAt' => 'DESC'],
+        );
+
+        $recentReports = $entityManager->getRepository('App\\Entity\\PerformanceReport')->findBy(
             ['student' => $student],
             ['createdAt' => 'DESC'],
             6,
         );
 
+        $allReports = $entityManager->getRepository('App\\Entity\\PerformanceReport')->findBy(
+            ['student' => $student],
+            ['createdAt' => 'DESC'],
+        );
+
+        $doneLessons = 0;
+        $pendingLessons = 0;
+        $failedLessons = 0;
+        $totalEstimatedMinutes = 0;
+        $subjectProgress = [];
+
+        foreach ($allLessons as $lesson) {
+            $status = $lesson->getProcessingStatus();
+            if ($status === ProcessingStatus::Done || $status === ProcessingStatus::PartialFallback) {
+                ++$doneLessons;
+            } elseif ($status === ProcessingStatus::Failed) {
+                ++$failedLessons;
+            } else {
+                ++$pendingLessons;
+            }
+
+            $totalEstimatedMinutes += max(0, (int) ($lesson->getEstimatedStudyMinutes() ?? 0));
+
+            $subject = trim($lesson->getSubject()) !== '' ? $lesson->getSubject() : 'General';
+            if (!isset($subjectProgress[$subject])) {
+                $subjectProgress[$subject] = ['subject' => $subject, 'total' => 0, 'done' => 0];
+            }
+            ++$subjectProgress[$subject]['total'];
+            if ($status === ProcessingStatus::Done || $status === ProcessingStatus::PartialFallback) {
+                ++$subjectProgress[$subject]['done'];
+            }
+        }
+
+        $averageScore = 0.0;
+        $masteredCount = 0;
+        $needsReviewCount = 0;
+        $notMasteredCount = 0;
+        $weakTopicFrequency = [];
+
+        foreach ($allReports as $report) {
+            $averageScore += $report->getQuizScore();
+            $status = $report->getMasteryStatus()->value;
+            if ($status === 'MASTERED') {
+                ++$masteredCount;
+            } elseif ($status === 'NEEDS_REVIEW') {
+                ++$needsReviewCount;
+            } else {
+                ++$notMasteredCount;
+            }
+
+            foreach ($report->getWeakTopics() as $weakTopic) {
+                $topic = trim((string) $weakTopic);
+                if ($topic === '') {
+                    continue;
+                }
+                $weakTopicFrequency[$topic] = ($weakTopicFrequency[$topic] ?? 0) + 1;
+            }
+        }
+
+        if ($allReports !== []) {
+            $averageScore = round($averageScore / count($allReports), 2);
+        }
+
+        arsort($weakTopicFrequency);
+        uasort($subjectProgress, static function (array $a, array $b): int {
+            return $b['total'] <=> $a['total'];
+        });
+
+        $masteryRate = $allReports === [] ? 0 : (int) round(($masteredCount / count($allReports)) * 100);
+        $nextAction = 'Upload a lesson and start your first adaptive quiz.';
+        $latestReport = $recentReports[0] ?? null;
+        if ($latestReport !== null) {
+            $nextAction = match ($latestReport->getMasteryStatus()->value) {
+                'MASTERED' => 'Great progress. Start a new lesson to keep momentum.',
+                'NEEDS_REVIEW' => 'Review weak topics and retake the new adaptive quiz.',
+                default => 'Focus on generated remediation materials before the next attempt.',
+            };
+        }
+
         return $this->render('student/dashboard.html.twig', [
             'student' => $student,
-            'lessons' => $lessons,
-            'reports' => $reports,
+            'lessons' => $recentLessons,
+            'reports' => $recentReports,
+            'dashboard' => [
+                'totalLessons' => count($allLessons),
+                'doneLessons' => $doneLessons,
+                'pendingLessons' => $pendingLessons,
+                'failedLessons' => $failedLessons,
+                'totalReports' => count($allReports),
+                'averageScore' => $averageScore,
+                'masteredCount' => $masteredCount,
+                'needsReviewCount' => $needsReviewCount,
+                'notMasteredCount' => $notMasteredCount,
+                'masteryRate' => $masteryRate,
+                'plannedMinutes' => $totalEstimatedMinutes,
+                'nextAction' => $nextAction,
+                'subjectProgress' => array_values($subjectProgress),
+                'topWeakTopics' => array_slice(array_keys($weakTopicFrequency), 0, 5),
+            ],
         ]);
     }
 
@@ -138,6 +238,44 @@ class StudentController extends AbstractController
             'latestQuiz' => $latestQuiz,
             'latestReport' => $latestReport,
         ]);
+    }
+
+    #[Route('/lessons/{id}/regenerate-quiz', name: 'student_lesson_regenerate_quiz', requirements: ['id' => '\\d+'], methods: ['POST'])]
+    public function regenerateQuiz(
+        int $id,
+        Request $request,
+        EntityManagerInterface $entityManager,
+        LessonWorkflowService $lessonWorkflowService,
+    ): Response {
+        $student = $this->currentStudentProfile();
+        if ($student === null) {
+            throw $this->createAccessDeniedException('Student profile is missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('regenerate_quiz_'.$id, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $id]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($id);
+        if (!$lesson instanceof Lesson || $lesson->getUploadedBy()?->getId() !== $student->getId()) {
+            throw $this->createAccessDeniedException('You can only regenerate quizzes for your own lessons.');
+        }
+
+        $latestReport = $entityManager->getRepository('App\\Entity\\PerformanceReport')->findOneBy(
+            ['student' => $student, 'lesson' => $lesson],
+            ['createdAt' => 'DESC'],
+        );
+
+        $focusTopics = $latestReport?->getWeakTopics() ?? [];
+        $lessonWorkflowService->generateQuiz((int) $lesson->getId(), $focusTopics);
+
+        $this->addFlash('success', $focusTopics === []
+            ? 'A fresh lesson-based quiz was generated.'
+            : 'A new adaptive quiz was generated from your weak topics.');
+
+        return $this->redirectToRoute('student_lesson_show', ['id' => $id]);
     }
 
     #[Route('/groups/join', name: 'student_group_join')]

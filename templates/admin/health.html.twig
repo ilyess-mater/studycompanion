@@ -1,0 +1,90 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Admin Health Check | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="dashboard-hero">
+        <div class="dashboard-hero-main">
+            <span class="hero-eyebrow">Admin Diagnostics</span>
+            <h1>Platform Health Check</h1>
+            <p>Single-screen operational verification for login, database, AI provider, and critical route integrity.</p>
+            <div class="hero-badges">
+                <span>Generated {{ generatedAt|date('Y-m-d H:i:s') }}</span>
+                <span>Overall status: {{ overallStatus|upper }}</span>
+            </div>
+        </div>
+        <aside class="hero-action">
+            <h2>Status Summary</h2>
+            <p class="note">Use this page before demos or deployment checks to quickly validate essential services.</p>
+            <div class="hero-action-meter">
+                {% set passCount = 0 %}
+                {% for check in checks %}
+                    {% if check.status == 'pass' %}
+                        {% set passCount = passCount + 1 %}
+                    {% endif %}
+                {% endfor %}
+                {% set completion = checks|length > 0 ? ((passCount / checks|length) * 100)|round(0) : 0 %}
+                <div style="display:flex; justify-content:space-between; font-size:.8rem; color:var(--muted); margin-bottom:.35rem;">
+                    <span>Checks passing</span>
+                    <strong style="color:#1c469d;">{{ completion }}%</strong>
+                </div>
+                <div class="hero-action-track">
+                    <div class="hero-action-fill" style="width: {{ completion }}%;"></div>
+                </div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="health-grid">
+        {% for check in checks %}
+            <article class="health-card">
+                <strong>{{ check.name }}</strong>
+                <div class="health-status status-{{ check.status }}">
+                    <span class="status-dot"></span>
+                    <span>{{ check.status|upper }}</span>
+                </div>
+                <p class="note" style="margin-top:.45rem;">{{ check.message }}</p>
+                {% if check.meta is not empty %}
+                    <div class="chip-list" style="margin-top:.55rem;">
+                        {% for key, value in check.meta %}
+                            <span class="chip">{{ key }}: {{ value }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </article>
+        {% endfor %}
+    </section>
+
+    <section class="card dashboard-section">
+        <div class="section-head">
+            <h2>Critical Route Checks</h2>
+            <span class="pill">{{ routeChecks|length }} routes</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Route</th>
+                    <th>Status</th>
+                    <th>Methods</th>
+                    <th>URL</th>
+                    <th>Message</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for routeCheck in routeChecks %}
+                    <tr>
+                        <td><code>{{ routeCheck.name }}</code></td>
+                        <td>
+                            <span class="route-status route-status-{{ routeCheck.status }}">{{ routeCheck.status }}</span>
+                        </td>
+                        <td>{{ routeCheck.methods is not empty ? routeCheck.methods|join(', ') : 'ANY' }}</td>
+                        <td>{{ routeCheck.url ?? 'N/A' }}</td>
+                        <td>{{ routeCheck.message }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endblock %}

@@ -175,17 +175,25 @@ class LessonWorkflowService
         }
     }
 
-    public function generateQuiz(int $lessonId): void
+    /**
+     * @param list<string> $focusTopics
+     */
+    public function generateQuiz(int $lessonId, array $focusTopics = []): void
     {
         $lesson = $this->entityManager->getRepository(Lesson::class)->find($lessonId);
         if (!$lesson instanceof Lesson) {
             return;
         }
 
+        $focusTopics = $this->normalizeStringList($focusTopics);
+        $analysisData = $lesson->getAnalysisData() ?? [];
+        $analysisTopics = $this->normalizeStringList($analysisData['topics'] ?? []);
+        $analysisConcepts = $this->normalizeStringList($analysisData['keyConcepts'] ?? []);
+
         $jobLog = (new AiJobLog())
             ->setLesson($lesson)
             ->setJobType('quiz_generation')
-            ->setPromptHash(hash('sha256', 'quiz-'.$lesson->getId()));
+            ->setPromptHash(hash('sha256', 'quiz-'.$lesson->getId().'-'.implode('|', $focusTopics)));
 
         $start = microtime(true);
 
@@ -195,7 +203,15 @@ class LessonWorkflowService
                 ->setLesson($lesson)
                 ->setDifficulty($lesson->getDifficulty());
 
-            $questions = $this->aiTutorService->generateQuizQuestions($rawText, 8);
+            $questions = $this->aiTutorService->generateQuizQuestions($rawText, 8, [
+                'title' => $lesson->getTitle(),
+                'subject' => $lesson->getSubject(),
+                'difficulty' => $lesson->getDifficulty()->value,
+                'topics' => $analysisTopics,
+                'keyConcepts' => $analysisConcepts,
+                'weakTopics' => $focusTopics,
+            ]);
+
             foreach ($questions as $row) {
                 $question = (new Question())
                     ->setQuiz($quiz)
@@ -221,6 +237,26 @@ class LessonWorkflowService
             $this->entityManager->persist($jobLog);
             $this->entityManager->flush();
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function normalizeStringList(mixed $input): array
+    {
+        if (!is_array($input)) {
+            return [];
+        }
+
+        $output = [];
+        foreach ($input as $item) {
+            $value = trim((string) $item);
+            if ($value !== '') {
+                $output[] = $value;
+            }
+        }
+
+        return array_values(array_unique($output));
     }
 
     private function extractLessonText(Lesson $lesson): string

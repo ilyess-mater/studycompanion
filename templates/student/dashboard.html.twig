@@ -3,30 +3,102 @@
 {% block title %}Student Dashboard | StudyCompanion+{% endblock %}
 
 {% block body %}
-    <section class="hero">
-        <div class="hero-panel">
+    <section class="dashboard-hero">
+        <div class="dashboard-hero-main">
+            <span class="hero-eyebrow">Student Workspace</span>
             <h1>Welcome, {{ student.user.name }}</h1>
-            <p>Track your mastery by studying, testing, and re-learning only weak points.</p>
-        </div>
-        <div class="card grid" style="gap:.7rem;">
-            <div class="metric">
-                <span class="note">Uploaded lessons</span>
-                <span class="metric-value">{{ lessons|length }}</span>
-            </div>
-            <div class="metric">
-                <span class="note">Latest reports</span>
-                <span class="metric-value">{{ reports|length }}</span>
-            </div>
-            <div class="metric">
-                <span class="note">Group</span>
-                <span class="metric-value" style="font-size:1rem;">{{ student.group ? student.group.name : 'Not joined' }}</span>
+            <p>Track your mastery through a full AI loop: analyze, study, quiz, and targeted remediation.</p>
+            <div class="hero-badges">
+                <span>{{ student.group ? student.group.name : 'No group joined yet' }}</span>
+                <span>{{ dashboard.totalLessons }} lessons uploaded</span>
+                <span>{{ dashboard.totalReports }} quizzes completed</span>
             </div>
         </div>
+        <aside class="hero-action">
+            <h2>Next Best Action</h2>
+            <p>{{ dashboard.nextAction }}</p>
+            <div class="hero-action-meter">
+                <div style="display:flex; justify-content:space-between; font-size:.8rem; color:var(--muted); margin-bottom:.35rem;">
+                    <span>Mastery rate</span>
+                    <strong style="color:#1c469d;">{{ dashboard.masteryRate }}%</strong>
+                </div>
+                <div class="hero-action-track">
+                    <div class="hero-action-fill" style="width: {{ dashboard.masteryRate }}%;"></div>
+                </div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="kpi-grid">
+        <article class="kpi-card">
+            <div class="kpi-label">Average Score</div>
+            <div class="kpi-value">{{ dashboard.averageScore }}%</div>
+            <div class="kpi-note">{{ dashboard.masteredCount }} mastered reports</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-label">Lesson Pipeline</div>
+            <div class="kpi-value">{{ dashboard.doneLessons }}/{{ dashboard.totalLessons }}</div>
+            <div class="kpi-note">{{ dashboard.pendingLessons }} pending, {{ dashboard.failedLessons }} failed</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-label">Study Time Plan</div>
+            <div class="kpi-value">{{ dashboard.plannedMinutes }}</div>
+            <div class="kpi-note">Estimated total minutes</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-label">Mastery Mix</div>
+            <div class="kpi-value">{{ dashboard.masteredCount }}/{{ dashboard.totalReports }}</div>
+            <div class="kpi-note">{{ dashboard.needsReviewCount }} needs review, {{ dashboard.notMasteredCount }} not mastered</div>
+        </article>
     </section>
 
     <div class="grid grid-2">
-        <section class="card">
-            <h2>Recent Lessons</h2>
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Subject Progress</h2>
+                <span class="pill">Completion View</span>
+            </div>
+            {% if dashboard.subjectProgress is not empty %}
+                {% for row in dashboard.subjectProgress %}
+                    {% set completion = row.total > 0 ? ((row.done / row.total) * 100)|round(0) : 0 %}
+                    <div class="subject-row">
+                        <div class="subject-line">
+                            <span>{{ row.subject }}</span>
+                            <span>{{ row.done }}/{{ row.total }} done</span>
+                        </div>
+                        <div class="subject-track">
+                            <div class="subject-fill" style="width: {{ completion }}%;"></div>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="note">Upload lessons to unlock subject-level progress tracking.</p>
+            {% endif %}
+        </section>
+
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Frequent Weak Topics</h2>
+                <span class="pill">Remediation Priority</span>
+            </div>
+            {% if dashboard.topWeakTopics is not empty %}
+                <div class="chip-list">
+                    {% for topic in dashboard.topWeakTopics %}
+                        <span class="chip">{{ topic }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="note">No weak-topic pattern yet. Complete quizzes to get focused remediation.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <div class="grid grid-2">
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Recent Lessons</h2>
+                <span class="pill">{{ lessons|length }} latest</span>
+            </div>
             <div class="list">
                 {% for lesson in lessons %}
                     <a class="list-item" href="{{ path('student_lesson_show', {id: lesson.id}) }}">
@@ -42,12 +114,15 @@
             </div>
         </section>
 
-        <section class="card">
-            <h2>Latest Performance</h2>
-            <div class="list">
+        <section class="card dashboard-section">
+            <div class="section-head">
+                <h2>Latest Performance</h2>
+                <span class="pill">{{ reports|length }} recent</span>
+            </div>
+            <div class="report-list">
                 {% for report in reports %}
-                    <div class="list-item">
-                        <div>
+                    <div class="report-item">
+                        <div class="report-main">
                             <strong>{{ report.lesson.title }}</strong>
                             <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
                         </div>

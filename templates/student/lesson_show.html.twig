@@ -7,9 +7,15 @@
         <h1>{{ lesson.title }}</h1>
         <p>{{ lesson.subject }} | Difficulty: {{ lesson.difficulty.value }} | Estimated study time: {{ lesson.estimatedStudyMinutes ?? 'Pending' }} minutes</p>
         <p class="note" style="margin-top:.55rem;">Processing status: <span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span></p>
-        {% if latestQuiz %}
-            <a href="{{ path('student_quiz_take', {id: latestQuiz.id}) }}" class="btn btn-primary" style="margin-top:1rem; display:inline-flex;">Start Adaptive Quiz</a>
-        {% endif %}
+        <div style="display:flex; gap:.7rem; flex-wrap:wrap; margin-top:1rem;">
+            {% if latestQuiz %}
+                <a href="{{ path('student_quiz_take', {id: latestQuiz.id}) }}" class="btn btn-primary" style="display:inline-flex;">Start Adaptive Quiz</a>
+            {% endif %}
+            <form method="post" action="{{ path('student_lesson_regenerate_quiz', {id: lesson.id}) }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('regenerate_quiz_' ~ lesson.id) }}">
+                <button type="submit" class="btn">Generate New Quiz</button>
+            </form>
+        </div>
     </section>
 
     {% if latestReport %}

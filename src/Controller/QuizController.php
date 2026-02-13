@@ -89,6 +89,7 @@ class QuizController extends AbstractController
                 $existingVersionCount = $entityManager->getRepository('App\\Entity\\StudyMaterial')->count(['lesson' => $lesson]);
                 $nextVersion = max(2, (int) floor($existingVersionCount / 4) + 1);
                 $lessonWorkflowService->generateMaterials((int) $lesson?->getId(), $analysis['weakTopics'], $nextVersion);
+                $lessonWorkflowService->generateQuiz((int) $lesson?->getId(), $analysis['weakTopics']);
             }
 
             $this->addFlash('success', sprintf('Quiz completed. Score: %.2f%%', $analysis['score']));
