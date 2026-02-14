@@ -2,6 +2,13 @@
 
 {% block title %}Sign up | StudyCompanion+{% endblock %}
 
+{% block javascripts %}
+    {{ parent() }}
+    {% if turnstileEnabled and turnstileSiteKey is not empty %}
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    {% endif %}
+{% endblock %}
+
 {% block layout %}
     <div class="auth-scene">
         <div class="auth-bubbles" aria-hidden="true">
@@ -44,6 +51,11 @@
                     {{ form_row(registrationForm.role) }}
                     {{ form_row(registrationForm.grade) }}
                     {{ form_row(registrationForm.plainPassword) }}
+                    {% if turnstileEnabled and turnstileSiteKey is not empty %}
+                        <div class="captcha-block">
+                            <div class="cf-turnstile" data-sitekey="{{ turnstileSiteKey }}"></div>
+                        </div>
+                    {% endif %}
                     <button type="submit" class="btn-primary">Create account</button>
                 {{ form_end(registrationForm) }}
 

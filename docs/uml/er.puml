@@ -9,6 +9,7 @@ entity User {
   password : string
   roles : json
   created_at : datetime
+  third_party_meta : json
 }
 
 entity StudentProfile {
@@ -17,6 +18,7 @@ entity StudentProfile {
   user_id : int <<FK>>
   grade : string
   group_id : int <<FK>>
+  third_party_meta : json
 }
 
 entity TeacherProfile {
@@ -24,6 +26,7 @@ entity TeacherProfile {
   --
   user_id : int <<FK>>
   created_at : datetime
+  third_party_meta : json
 }
 
 entity StudyGroup {
@@ -32,6 +35,7 @@ entity StudyGroup {
   teacher_id : int <<FK>>
   name : string
   invite_code : string
+  third_party_meta : json
 }
 
 entity Lesson {
@@ -43,6 +47,7 @@ entity Lesson {
   file_path : string
   estimated_study_minutes : int
   processing_status : enum
+  third_party_meta : json
 }
 
 entity StudyMaterial {
@@ -54,6 +59,7 @@ entity StudyMaterial {
   flashcards : json
   content : text
   version : int
+  third_party_meta : json
 }
 
 entity Quiz {
@@ -62,6 +68,7 @@ entity Quiz {
   lesson_id : int <<FK>>
   difficulty : enum
   generated_at : datetime
+  third_party_meta : json
 }
 
 entity Question {
@@ -71,6 +78,7 @@ entity Question {
   text : text
   options : json
   correct_answer : string
+  third_party_meta : json
 }
 
 entity StudentAnswer {
@@ -81,6 +89,7 @@ entity StudentAnswer {
   answer : string
   is_correct : bool
   response_time_ms : int
+  third_party_meta : json
 }
 
 entity PerformanceReport {
@@ -92,6 +101,7 @@ entity PerformanceReport {
   quiz_score : float
   weak_topics : json
   mastery_status : enum
+  third_party_meta : json
 }
 
 entity TeacherComment {
@@ -100,6 +110,7 @@ entity TeacherComment {
   teacher_id : int <<FK>>
   student_id : int <<FK>>
   content : text
+  third_party_meta : json
 }
 
 entity FocusSession {

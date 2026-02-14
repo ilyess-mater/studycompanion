@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Enum\LessonDifficulty;
+use App\Enum\ThirdPartyStatus;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -191,6 +192,202 @@ PROMPT;
         $fallback = $this->fallbackQuiz($text, $count, $context);
 
         return $this->mergeUniqueQuestions($questions, $fallback, $count);
+    }
+
+    /**
+     * @return array{
+     *     tip:string,
+     *     status:ThirdPartyStatus,
+     *     message:string,
+     *     latencyMs:int|null
+     * }
+     */
+    public function generateOnboardingTip(string $role, string $name, ?string $grade): array
+    {
+        $prompt = sprintf(
+            "Create one short onboarding tip for a %s user named %s%s. Return JSON: {\"tip\":\"...\"}.",
+            $role,
+            $name,
+            $grade !== null && $grade !== '' ? sprintf(' in grade %s', $grade) : '',
+        );
+
+        $start = microtime(true);
+        $data = $this->requestJson($prompt);
+        $latencyMs = (int) ((microtime(true) - $start) * 1000);
+
+        if (is_array($data) && isset($data['tip']) && trim((string) $data['tip']) !== '') {
+            return [
+                'tip' => trim((string) $data['tip']),
+                'status' => ThirdPartyStatus::Success,
+                'message' => 'Onboarding tip generated.',
+                'latencyMs' => $latencyMs,
+            ];
+        }
+
+        return [
+            'tip' => $role === 'teacher'
+                ? 'Start by creating one group and posting one actionable comment per student report.'
+                : 'Upload one lesson, review summary and flashcards, then complete the adaptive quiz.',
+            'status' => $this->fallbackStatus(),
+            'message' => $this->fallbackMessage('onboarding tip'),
+            'latencyMs' => $latencyMs,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     tags:list<string>,
+     *     hint:string,
+     *     status:ThirdPartyStatus,
+     *     message:string,
+     *     latencyMs:int|null
+     * }
+     */
+    public function tagQuestionConcept(string $questionText, string $lessonContext, string $subject = ''): array
+    {
+        $prompt = <<<PROMPT
+Tag this MCQ question with 1-3 lesson concept tags and one short difficulty hint.
+Return JSON:
+{
+  "tags": ["..."],
+  "difficultyHint": "..."
+}
+Subject: {$subject}
+Lesson context: {$this->limit($lessonContext, 600)}
+Question: {$questionText}
+PROMPT;
+
+        $start = microtime(true);
+        $data = $this->requestJson($prompt);
+        $latencyMs = (int) ((microtime(true) - $start) * 1000);
+
+        if (is_array($data)) {
+            $tags = $this->normalizeStringList($data['tags'] ?? []);
+            $hint = trim((string) ($data['difficultyHint'] ?? ''));
+            if ($tags !== [] || $hint !== '') {
+                return [
+                    'tags' => array_slice($tags, 0, 3),
+                    'hint' => $hint !== '' ? $hint : 'Understand the concept before selecting the answer.',
+                    'status' => ThirdPartyStatus::Success,
+                    'message' => 'Question concept tags generated.',
+                    'latencyMs' => $latencyMs,
+                ];
+            }
+        }
+
+        $fallbackTags = array_slice($this->extractKeywords($questionText.' '.$lessonContext, 3), 0, 3);
+        if ($fallbackTags === []) {
+            $fallbackTags = ['core-concept'];
+        }
+
+        return [
+            'tags' => $fallbackTags,
+            'hint' => 'Review the related topic before attempting similar questions.',
+            'status' => $this->fallbackStatus(),
+            'message' => $this->fallbackMessage('question tagging'),
+            'latencyMs' => $latencyMs,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     label:string,
+     *     confidence:float,
+     *     status:ThirdPartyStatus,
+     *     message:string,
+     *     latencyMs:int|null
+     * }
+     */
+    public function analyzeMisconception(string $questionText, string $correctAnswer, string $studentAnswer): array
+    {
+        $prompt = <<<PROMPT
+Identify likely misconception from this wrong answer.
+Return JSON:
+{
+  "label": "...",
+  "confidence": 0.0
+}
+Question: {$questionText}
+Correct answer: {$correctAnswer}
+Student answer: {$studentAnswer}
+PROMPT;
+
+        $start = microtime(true);
+        $data = $this->requestJson($prompt);
+        $latencyMs = (int) ((microtime(true) - $start) * 1000);
+
+        if (is_array($data)) {
+            $label = trim((string) ($data['label'] ?? ''));
+            $confidence = (float) ($data['confidence'] ?? 0.0);
+            if ($label !== '') {
+                return [
+                    'label' => $label,
+                    'confidence' => max(0.0, min(1.0, $confidence)),
+                    'status' => ThirdPartyStatus::Success,
+                    'message' => 'Misconception label generated.',
+                    'latencyMs' => $latencyMs,
+                ];
+            }
+        }
+
+        return [
+            'label' => 'Needs concept reinforcement',
+            'confidence' => 0.35,
+            'status' => $this->fallbackStatus(),
+            'message' => $this->fallbackMessage('misconception analysis'),
+            'latencyMs' => $latencyMs,
+        ];
+    }
+
+    /**
+     * @param list<string> $weakTopics
+     * @return array{
+     *     summary:string,
+     *     status:ThirdPartyStatus,
+     *     message:string,
+     *     latencyMs:int|null
+     * }
+     */
+    public function buildRemediationNarrative(array $weakTopics, float $score, string $lessonTitle): array
+    {
+        $prompt = <<<PROMPT
+Write a short remediation narrative for the student.
+Return JSON:
+{
+  "summary": "..."
+}
+Lesson: {$lessonTitle}
+Score: {$score}
+Weak topics: {$this->formatHintList($weakTopics)}
+PROMPT;
+
+        $start = microtime(true);
+        $data = $this->requestJson($prompt);
+        $latencyMs = (int) ((microtime(true) - $start) * 1000);
+
+        if (is_array($data)) {
+            $summary = trim((string) ($data['summary'] ?? ''));
+            if ($summary !== '') {
+                return [
+                    'summary' => $summary,
+                    'status' => ThirdPartyStatus::Success,
+                    'message' => 'Remediation narrative generated.',
+                    'latencyMs' => $latencyMs,
+                ];
+            }
+        }
+
+        $fallback = sprintf(
+            'Focus on %s, then retake a short quiz to confirm mastery improvement.',
+            $weakTopics === [] ? 'the lesson core concepts' : implode(', ', array_slice($weakTopics, 0, 3)),
+        );
+
+        return [
+            'summary' => $fallback,
+            'status' => $this->fallbackStatus(),
+            'message' => $this->fallbackMessage('remediation narrative'),
+            'latencyMs' => $latencyMs,
+        ];
     }
 
     /**
@@ -567,5 +764,17 @@ PROMPT;
         }
 
         return array_values(array_unique($output));
+    }
+
+    private function fallbackStatus(): ThirdPartyStatus
+    {
+        return $this->hasProvider() ? ThirdPartyStatus::Fallback : ThirdPartyStatus::Skipped;
+    }
+
+    private function fallbackMessage(string $feature): string
+    {
+        return $this->hasProvider()
+            ? sprintf('AI response failed for %s, fallback used.', $feature)
+            : sprintf('AI key missing for %s, fallback used.', $feature);
     }
 }

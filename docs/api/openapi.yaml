@@ -89,7 +89,28 @@ paths:
           required: true
           schema: { type: integer }
       responses:
-        '200': { description: Status payload }
+        '200':
+          description: Status payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  processingStatus: { type: string }
+                  estimatedStudyMinutes: { type: integer, nullable: true }
+                  difficulty: { type: string }
+                  thirdParty:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      success: { type: integer }
+                      failed: { type: integer }
+                      fallback: { type: integer }
+                      skipped: { type: integer }
+                      providers:
+                        type: array
+                        items: { type: string }
   /api/v1/students/{id}/mastery:
     get:
       summary: Get mastery aggregate for a student
@@ -100,7 +121,29 @@ paths:
           required: true
           schema: { type: integer }
       responses:
-        '200': { description: Mastery payload }
+        '200':
+          description: Mastery payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  studentId: { type: integer }
+                  reportsCount: { type: integer }
+                  averageScore: { type: number, format: float }
+                  latestStatus: { type: string, nullable: true }
+                  hasThirdPartyFeedback: { type: boolean }
+                  reportThirdParty:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      success: { type: integer }
+                      failed: { type: integer }
+                      fallback: { type: integer }
+                      skipped: { type: integer }
+                      providers:
+                        type: array
+                        items: { type: string }
 components:
   securitySchemes:
     bearerAuth:

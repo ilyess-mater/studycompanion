@@ -7,6 +7,14 @@
         <h1>{{ lesson.title }}</h1>
         <p>{{ lesson.subject }} | Difficulty {{ lesson.difficulty.value }} | Student: <strong>{{ lesson.uploadedBy.user.name }}</strong></p>
         <p class="note" style="margin-top:.5rem;">Status: <span class="badge {{ lesson.processingStatus.value == 'DONE' ? 'badge-done' : (lesson.processingStatus.value == 'FAILED' ? 'badge-failed' : 'badge-pending') }}">{{ lesson.processingStatus.value }}</span></p>
+        {% set lessonIntegrations = lesson.thirdPartyMeta.integrations ?? {} %}
+        {% if lessonIntegrations is not empty %}
+            <div class="third-party-strip" style="margin-top:.7rem;">
+                {% for provider, integration in lessonIntegrations %}
+                    <span class="third-party-chip third-party-{{ integration.status|lower }}">{{ provider }} - {{ integration.status }}</span>
+                {% endfor %}
+            </div>
+        {% endif %}
     </section>
 
     <div class="grid grid-2">
@@ -19,6 +27,14 @@
                             <strong>{{ material.type.value }} v{{ material.version }}</strong>
                             <span class="note">{{ material.createdAt|date('Y-m-d H:i') }}</span>
                         </div>
+                        {% set materialIntegrations = material.thirdPartyMeta.integrations ?? {} %}
+                        {% if materialIntegrations is not empty %}
+                            <div class="third-party-strip" style="margin-bottom:.45rem;">
+                                {% for provider, integration in materialIntegrations %}
+                                    <span class="third-party-chip third-party-{{ integration.status|lower }}">{{ provider }} - {{ integration.status }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
                         {% if material.summary %}
                             <p>{{ material.summary }}</p>
                         {% elseif material.flashcards %}
@@ -48,6 +64,34 @@
                         </div>
                         <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
                         <div class="note">Weak topics: {{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</div>
+
+                        <div class="note" style="margin-top:.5rem; font-weight:700;">Discussion</div>
+                        <div style="width:100%; display:grid; gap:.45rem; margin-top:.3rem;">
+                            {% set thread = commentsByStudent[report.student.id] ?? [] %}
+                            {% for comment in thread %}
+                                <div class="discussion-message {{ comment.authorRole == 'ROLE_TEACHER' ? 'discussion-teacher' : 'discussion-student' }}">
+                                    <div style="display:flex; justify-content:space-between; gap:.8rem;">
+                                        <strong>{{ comment.authorRole == 'ROLE_TEACHER' ? 'Teacher' : report.student.user.name }}</strong>
+                                        <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                                    </div>
+                                    <p style="margin-top:.3rem;">{{ comment.content }}</p>
+                                    {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
+                                    {% if moderation %}
+                                        <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <p class="note">No comments yet for this student on this lesson.</p>
+                            {% endfor %}
+                        </div>
+
+                        <form method="post" action="{{ path('teacher_lesson_comment_add', {id: lesson.id}) }}" class="form-grid" style="width:100%; margin-top:.7rem;">
+                            <input type="hidden" name="_token" value="{{ csrf_token('teacher_lesson_comment_' ~ lesson.id) }}">
+                            <input type="hidden" name="student_id" value="{{ report.student.id }}">
+                            <label for="teacher-comment-{{ report.student.id }}">Add comment to {{ report.student.user.name }}</label>
+                            <textarea id="teacher-comment-{{ report.student.id }}" name="content" rows="3" required minlength="3" maxlength="3000" placeholder="Write targeted feedback for this lesson..."></textarea>
+                            <button type="submit" class="btn-primary">Save Comment</button>
+                        </form>
                     </div>
                 {% else %}
                     <p class="note">No reports submitted yet.</p>

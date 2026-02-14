@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\Concern\ThirdPartyMetaTrait;
 use App\Enum\LessonDifficulty;
 use App\Enum\ProcessingStatus;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -16,6 +17,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(name: 'idx_lesson_subject_difficulty', columns: ['subject', 'difficulty'])]
 class Lesson
 {
+    use ThirdPartyMetaTrait;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]

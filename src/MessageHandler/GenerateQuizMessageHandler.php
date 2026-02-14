@@ -17,6 +17,6 @@ class GenerateQuizMessageHandler
 
     public function __invoke(GenerateQuizMessage $message): void
     {
-        $this->lessonWorkflowService->generateQuiz($message->lessonId);
+        $this->lessonWorkflowService->generateQuiz($message->lessonId, $message->focusTopics);
     }
 }

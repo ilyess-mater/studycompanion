@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Entity\User;
 use App\Tests\Support\ResetsDatabase;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 class AuthFlowTest extends WebTestCase
@@ -35,6 +37,16 @@ class AuthFlowTest extends WebTestCase
         $this->client->submit($form);
         self::assertResponseRedirects('/login');
 
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        $user = $entityManager->getRepository(User::class)->findOneBy(['email' => 'student-test@example.com']);
+        self::assertNotNull($user);
+        self::assertArrayHasKey('integrations', $user->getThirdPartyMeta() ?? []);
+        self::assertArrayHasKey('CLOUDFLARE_TURNSTILE', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('SYMFONY_MAILER', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertNotNull($user->getStudentProfile());
+        self::assertArrayHasKey('OPENAI', ($user->getStudentProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+
         $this->client->request('GET', '/login');
         $this->client->submitForm('Sign in', [
             '_username' => 'student-test@example.com',
@@ -57,6 +69,16 @@ class AuthFlowTest extends WebTestCase
 
         $this->client->submit($form);
         self::assertResponseRedirects('/login');
+
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        $user = $entityManager->getRepository(User::class)->findOneBy(['email' => 'teacher-test@example.com']);
+        self::assertNotNull($user);
+        self::assertArrayHasKey('integrations', $user->getThirdPartyMeta() ?? []);
+        self::assertArrayHasKey('CLOUDFLARE_TURNSTILE', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('SYMFONY_MAILER', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertNotNull($user->getTeacherProfile());
+        self::assertArrayHasKey('OPENAI', ($user->getTeacherProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
         $this->client->request('GET', '/login');
         $this->client->submitForm('Sign in', [

@@ -1,0 +1,79 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Settings | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card" style="margin-bottom: 1rem;">
+        <h1>Settings</h1>
+        <p>Customize appearance and sidebar behavior for your account experience.</p>
+    </section>
+
+    <div class="grid grid-2">
+        <section class="card settings-card">
+            <h2>Appearance</h2>
+            <p class="note">Choose the visual theme.</p>
+            <div class="settings-options">
+                <label class="settings-option">
+                    <input
+                        type="radio"
+                        name="theme_mode"
+                        value="light"
+                        data-theme-option
+                        data-action="change->theme#setLight"
+                    >
+                    <span>
+                        <strong>Light Mode</strong>
+                        <small>Bright liquid glass interface for daytime use.</small>
+                    </span>
+                </label>
+                <label class="settings-option">
+                    <input
+                        type="radio"
+                        name="theme_mode"
+                        value="dark"
+                        data-theme-option
+                        data-action="change->theme#setDark"
+                    >
+                    <span>
+                        <strong>Night Mode</strong>
+                        <small>Dark liquid glass palette for low-light focus.</small>
+                    </span>
+                </label>
+            </div>
+        </section>
+
+        <section class="card settings-card">
+            <h2>Sidebar Behavior</h2>
+            <p class="note">Control how the left sidebar behaves on desktop.</p>
+            <div class="settings-options">
+                <label class="settings-option">
+                    <input
+                        type="radio"
+                        name="sidebar_mode"
+                        value="fixed"
+                        data-sidebar-mode-option
+                        data-action="change->shell#setFixedMode"
+                    >
+                    <span>
+                        <strong>Always Visible</strong>
+                        <small>Sidebar stays fixed on the left at all times.</small>
+                    </span>
+                </label>
+                <label class="settings-option">
+                    <input
+                        type="radio"
+                        name="sidebar_mode"
+                        value="hover"
+                        data-sidebar-mode-option
+                        data-action="change->shell#setHoverMode"
+                    >
+                    <span>
+                        <strong>Auto Expand On Hover</strong>
+                        <small>Sidebar appears from the left when your mouse approaches it and hides when you move away.</small>
+                    </span>
+                </label>
+            </div>
+        </section>
+    </div>
+{% endblock %}
+

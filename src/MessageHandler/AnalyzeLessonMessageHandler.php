@@ -17,6 +17,6 @@ class AnalyzeLessonMessageHandler
 
     public function __invoke(AnalyzeLessonMessage $message): void
     {
-        $this->lessonWorkflowService->analyzeLesson($message->lessonId);
+        $this->lessonWorkflowService->processUploadedLesson($message->lessonId);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\Concern\ThirdPartyMetaTrait;
 use App\Enum\MasteryStatus;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -13,6 +14,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(name: 'idx_performance_report_student_lesson', columns: ['student_id', 'lesson_id'])]
 class PerformanceReport
 {
+    use ThirdPartyMetaTrait;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]

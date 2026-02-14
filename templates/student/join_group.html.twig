@@ -8,6 +8,7 @@
         <p>Use your teacher's invite code.</p>
         {% if student.group %}
             <p class="note" style="margin-top:.5rem;">Current group: <strong>{{ student.group.name }}</strong></p>
+            <p class="note" style="margin-top:.35rem;">Teacher: <strong>{{ student.group.teacher and student.group.teacher.user ? student.group.teacher.user.name : 'Unavailable' }}</strong></p>
         {% endif %}
         {{ form_start(joinForm, {attr: {class: 'form-grid', style: 'margin-top:1rem;'}}) }}
             {{ form_row(joinForm.inviteCode) }}

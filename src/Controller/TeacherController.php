@@ -10,10 +10,14 @@ use App\Entity\StudentProfile;
 use App\Entity\StudyGroup;
 use App\Entity\TeacherComment;
 use App\Entity\TeacherProfile;
+use App\Enum\ThirdPartyProvider;
+use App\Enum\ThirdPartyStatus;
 use App\Form\StudyGroupType;
 use App\Form\TeacherCommentType;
-use App\Form\TeacherGlobalCommentType;
 use App\Service\InviteCodeGenerator;
+use App\Service\PerspectiveModerationService;
+use App\Service\ThirdPartyMetaService;
+use App\Service\YouTubeRecommendationService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -185,6 +189,8 @@ class TeacherController extends AbstractController
         Request $request,
         EntityManagerInterface $entityManager,
         InviteCodeGenerator $inviteCodeGenerator,
+        YouTubeRecommendationService $youtubeRecommendationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
     ): Response {
         $teacher = $this->currentTeacherProfile();
         if ($teacher === null) {
@@ -204,6 +210,25 @@ class TeacherController extends AbstractController
             $group
                 ->setTeacher($teacher)
                 ->setInviteCode($inviteCode);
+
+            $query = trim($group->getName().' educational resources');
+            $recommendations = $youtubeRecommendationService->recommend($query, 3);
+            $thirdPartyMetaService->record(
+                $group,
+                ThirdPartyProvider::Youtube,
+                $youtubeRecommendationService->hasProvider() ? ThirdPartyStatus::Success : ThirdPartyStatus::Fallback,
+                'Group learning resources generated.',
+                [
+                    'query' => $query,
+                    'results' => array_map(
+                        static fn (array $video): array => [
+                            'title' => (string) ($video['title'] ?? ''),
+                            'url' => (string) ($video['url'] ?? ''),
+                        ],
+                        array_slice($recommendations, 0, 3),
+                    ),
+                ],
+            );
 
             $entityManager->persist($group);
             $entityManager->flush();
@@ -282,11 +307,122 @@ class TeacherController extends AbstractController
             20,
         );
 
+        $lessonComments = $entityManager->getRepository(TeacherComment::class)->findBy(
+            ['lesson' => $lesson, 'teacher' => $teacher],
+            ['createdAt' => 'ASC'],
+        );
+
+        $commentsByStudent = [];
+        foreach ($lessonComments as $comment) {
+            $studentId = $comment->getStudent()?->getId();
+            if ($studentId === null) {
+                continue;
+            }
+
+            if (!isset($commentsByStudent[$studentId])) {
+                $commentsByStudent[$studentId] = [];
+            }
+
+            $commentsByStudent[$studentId][] = $comment;
+        }
+
         return $this->render('teacher/lesson_show.html.twig', [
             'lesson' => $lesson,
             'materials' => $materials,
             'reports' => $reports,
+            'commentsByStudent' => $commentsByStudent,
         ]);
+    }
+
+    #[Route('/lessons/{id}/comments', name: 'teacher_lesson_comment_add', requirements: ['id' => '\\d+'], methods: ['POST'])]
+    public function addLessonComment(
+        int $id,
+        Request $request,
+        EntityManagerInterface $entityManager,
+        PerspectiveModerationService $moderationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
+    ): Response {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('teacher_lesson_comment_'.$id, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($id);
+        if (!$lesson instanceof Lesson || !$this->lessonBelongsToTeacher($lesson, $teacher)) {
+            throw $this->createAccessDeniedException('You can only comment on lessons uploaded by your students.');
+        }
+
+        $studentId = (int) $request->request->get('student_id', 0);
+        $student = $entityManager->getRepository(StudentProfile::class)->find($studentId);
+        if (!$student instanceof StudentProfile || !$this->studentBelongsToTeacher($student, $teacher)) {
+            throw $this->createAccessDeniedException('Invalid student selected.');
+        }
+
+        if ($lesson->getUploadedBy()?->getId() !== $student->getId()) {
+            throw $this->createAccessDeniedException('Selected student is not the owner of this lesson.');
+        }
+
+        $content = trim((string) $request->request->get('content', ''));
+        if (mb_strlen($content) < 3) {
+            $this->addFlash('error', 'Comment must contain at least 3 characters.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+        }
+
+        $moderation = $moderationService->moderate($content);
+        if ($moderation['allowed'] !== true) {
+            $this->addFlash('error', 'Comment blocked by moderation policy.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+        }
+
+        $parentCommentId = (int) $request->request->get('parent_comment_id', 0);
+        $parentComment = null;
+        if ($parentCommentId > 0) {
+            $candidate = $entityManager->getRepository(TeacherComment::class)->find($parentCommentId);
+            if ($candidate instanceof TeacherComment
+                && $candidate->getLesson()?->getId() === $lesson->getId()
+                && $candidate->getStudent()?->getId() === $student->getId()) {
+                $parentComment = $candidate;
+            }
+        }
+
+        $comment = (new TeacherComment())
+            ->setTeacher($teacher)
+            ->setStudent($student)
+            ->setLesson($lesson)
+            ->setParentComment($parentComment)
+            ->setAuthorRole(TeacherComment::AUTHOR_TEACHER)
+            ->setContent($content);
+        $thirdPartyMetaService->record(
+            $comment,
+            ThirdPartyProvider::GooglePerspective,
+            $moderation['status'],
+            $moderation['message'],
+            [
+                'score' => $moderation['score'],
+                'warn' => $moderation['warn'],
+                'action' => $moderation['action'],
+            ],
+            null,
+            $moderation['latencyMs'],
+        );
+
+        $entityManager->persist($comment);
+        $entityManager->flush();
+
+        if ($moderation['warn'] === true) {
+            $this->addFlash('success', 'Comment saved with moderation warning score.');
+        }
+        $this->addFlash('success', 'Comment saved for '.$student->getUser()?->getName().'.');
+
+        return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
     }
 
     #[Route('/reports', name: 'teacher_reports')]
@@ -316,8 +452,13 @@ class TeacherController extends AbstractController
     }
 
     #[Route('/students/{id}', name: 'teacher_student_show', requirements: ['id' => '\\d+'])]
-    public function studentShow(int $id, Request $request, EntityManagerInterface $entityManager): Response
-    {
+    public function studentShow(
+        int $id,
+        Request $request,
+        EntityManagerInterface $entityManager,
+        PerspectiveModerationService $moderationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
+    ): Response {
         $teacher = $this->currentTeacherProfile();
         if ($teacher === null) {
             throw $this->createAccessDeniedException('Teacher profile missing.');
@@ -337,7 +478,30 @@ class TeacherController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $comment->setTeacher($teacher)->setStudent($student);
+            $moderation = $moderationService->moderate($comment->getContent());
+            if ($moderation['allowed'] !== true) {
+                $this->addFlash('error', 'Comment blocked by moderation policy.');
+
+                return $this->redirectToRoute('teacher_student_show', ['id' => $student->getId()]);
+            }
+
+            $comment
+                ->setTeacher($teacher)
+                ->setStudent($student)
+                ->setAuthorRole(TeacherComment::AUTHOR_TEACHER);
+            $thirdPartyMetaService->record(
+                $comment,
+                ThirdPartyProvider::GooglePerspective,
+                $moderation['status'],
+                $moderation['message'],
+                [
+                    'score' => $moderation['score'],
+                    'warn' => $moderation['warn'],
+                    'action' => $moderation['action'],
+                ],
+                null,
+                $moderation['latencyMs'],
+            );
             $entityManager->persist($comment);
             $entityManager->flush();
 
@@ -363,54 +527,6 @@ class TeacherController extends AbstractController
             'reports' => $reports,
             'comments' => $comments,
             'commentForm' => $form,
-        ]);
-    }
-
-    #[Route('/comments', name: 'teacher_comments')]
-    public function comments(Request $request, EntityManagerInterface $entityManager): Response
-    {
-        $teacher = $this->currentTeacherProfile();
-        if ($teacher === null) {
-            throw $this->createAccessDeniedException('Teacher profile missing.');
-        }
-
-        $students = $this->findTeacherStudents($entityManager, $teacher);
-
-        $form = $this->createForm(TeacherGlobalCommentType::class, null, ['students' => $students]);
-        $form->handleRequest($request);
-
-        if ($form->isSubmitted() && $form->isValid()) {
-            /** @var array{student: StudentProfile, content: string} $data */
-            $data = $form->getData();
-            $student = $data['student'];
-
-            if (!$this->studentBelongsToTeacher($student, $teacher)) {
-                throw $this->createAccessDeniedException('Selected student is not in your groups.');
-            }
-
-            $comment = (new TeacherComment())
-                ->setTeacher($teacher)
-                ->setStudent($student)
-                ->setContent(trim($data['content']));
-
-            $entityManager->persist($comment);
-            $entityManager->flush();
-
-            $this->addFlash('success', 'Comment posted to '.$student->getUser()?->getName().'.');
-
-            return $this->redirectToRoute('teacher_comments');
-        }
-
-        $comments = $entityManager->getRepository(TeacherComment::class)->findBy(
-            ['teacher' => $teacher],
-            ['createdAt' => 'DESC'],
-            100,
-        );
-
-        return $this->render('teacher/comments.html.twig', [
-            'comments' => $comments,
-            'commentForm' => $form,
-            'students' => $students,
         ]);
     }
 

@@ -12,13 +12,20 @@ use App\Entity\StudentAnswer;
 use App\Entity\StudentProfile;
 use App\Enum\FocusSessionStatus;
 use App\Enum\FocusViolationType;
-use App\Service\LessonWorkflowService;
+use App\Enum\ThirdPartyProvider;
+use App\Enum\ThirdPartyStatus;
+use App\Message\GenerateMaterialsMessage;
+use App\Message\GenerateQuizMessage;
+use App\Service\AiTutorService;
 use App\Service\PerformanceAnalyzer;
+use App\Service\ThirdPartyMetaService;
+use App\Service\YouTubeRecommendationService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -31,7 +38,10 @@ class QuizController extends AbstractController
         Request $request,
         EntityManagerInterface $entityManager,
         PerformanceAnalyzer $performanceAnalyzer,
-        LessonWorkflowService $lessonWorkflowService,
+        AiTutorService $aiTutorService,
+        YouTubeRecommendationService $youtubeRecommendationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
+        MessageBusInterface $messageBus,
     ): Response {
         $student = $this->currentStudentProfile();
         if ($student === null) {
@@ -67,6 +77,34 @@ class QuizController extends AbstractController
                     ->setAnswer($row['answer'])
                     ->setIsCorrect($row['isCorrect'])
                     ->setResponseTimeMs($row['responseTimeMs']);
+
+                if ($row['isCorrect'] === true) {
+                    $thirdPartyMetaService->record(
+                        $studentAnswer,
+                        ThirdPartyProvider::OpenAi,
+                        ThirdPartyStatus::Skipped,
+                        'Misconception analysis skipped for correct answer.',
+                        ['correct' => true],
+                    );
+                } else {
+                    $misconception = $aiTutorService->analyzeMisconception(
+                        $row['question']->getText(),
+                        $row['question']->getCorrectAnswer(),
+                        $row['answer'],
+                    );
+                    $thirdPartyMetaService->record(
+                        $studentAnswer,
+                        ThirdPartyProvider::OpenAi,
+                        $misconception['status'],
+                        $misconception['message'],
+                        [
+                            'label' => $misconception['label'],
+                            'confidence' => $misconception['confidence'],
+                        ],
+                        null,
+                        $misconception['latencyMs'],
+                    );
+                }
                 $entityManager->persist($studentAnswer);
             }
 
@@ -77,6 +115,44 @@ class QuizController extends AbstractController
                 ->setQuizScore($analysis['score'])
                 ->setWeakTopics($analysis['weakTopics'])
                 ->setMasteryStatus($analysis['masteryStatus']);
+
+            $remediation = $aiTutorService->buildRemediationNarrative(
+                $analysis['weakTopics'],
+                (float) $analysis['score'],
+                $lesson?->getTitle() ?? 'Lesson',
+            );
+            $thirdPartyMetaService->record(
+                $report,
+                ThirdPartyProvider::OpenAi,
+                $remediation['status'],
+                $remediation['message'],
+                [
+                    'summary' => $remediation['summary'],
+                    'weakTopics' => $analysis['weakTopics'],
+                    'score' => $analysis['score'],
+                ],
+                null,
+                $remediation['latencyMs'],
+            );
+
+            $youtubeQuery = trim(($lesson?->getSubject() ?? '').' '.implode(' ', array_slice($analysis['weakTopics'], 0, 3)));
+            $youtubeResults = $youtubeRecommendationService->recommend($youtubeQuery !== '' ? $youtubeQuery : ($lesson?->getTitle() ?? 'study'), 3);
+            $thirdPartyMetaService->record(
+                $report,
+                ThirdPartyProvider::Youtube,
+                $youtubeRecommendationService->hasProvider() ? ThirdPartyStatus::Success : ThirdPartyStatus::Fallback,
+                'Weak-topic videos linked to performance report.',
+                [
+                    'query' => $youtubeQuery,
+                    'results' => array_map(
+                        static fn (array $video): array => [
+                            'title' => (string) ($video['title'] ?? ''),
+                            'url' => (string) ($video['url'] ?? ''),
+                        ],
+                        array_slice($youtubeResults, 0, 3),
+                    ),
+                ],
+            );
             $entityManager->persist($report);
 
             $focusSession
@@ -88,8 +164,8 @@ class QuizController extends AbstractController
             if ($analysis['weakTopics'] !== []) {
                 $existingVersionCount = $entityManager->getRepository('App\\Entity\\StudyMaterial')->count(['lesson' => $lesson]);
                 $nextVersion = max(2, (int) floor($existingVersionCount / 4) + 1);
-                $lessonWorkflowService->generateMaterials((int) $lesson?->getId(), $analysis['weakTopics'], $nextVersion);
-                $lessonWorkflowService->generateQuiz((int) $lesson?->getId(), $analysis['weakTopics']);
+                $messageBus->dispatch(new GenerateMaterialsMessage((int) $lesson->getId(), $analysis['weakTopics'], $nextVersion));
+                $messageBus->dispatch(new GenerateQuizMessage((int) $lesson->getId(), $analysis['weakTopics']));
             }
 
             $this->addFlash('success', sprintf('Quiz completed. Score: %.2f%%', $analysis['score']));

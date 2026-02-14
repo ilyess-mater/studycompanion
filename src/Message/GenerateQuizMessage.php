@@ -6,7 +6,13 @@ namespace App\Message;
 
 final readonly class GenerateQuizMessage
 {
-    public function __construct(public int $lessonId)
+    /**
+     * @param list<string> $focusTopics
+     */
+    public function __construct(
+        public int $lessonId,
+        public array $focusTopics = [],
+    )
     {
     }
 }

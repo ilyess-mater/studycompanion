@@ -9,8 +9,13 @@ use App\Entity\TeacherProfile;
 use App\Enum\UserRole;
 use App\Entity\User;
 use App\Form\RegistrationFormType;
+use App\Service\AiTutorService;
+use App\Service\NotificationService;
+use App\Service\ThirdPartyMetaService;
+use App\Service\TurnstileVerifier;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\FormError;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -23,6 +28,10 @@ class RegistrationController extends AbstractController
         Request $request,
         UserPasswordHasherInterface $passwordHasher,
         EntityManagerInterface $entityManager,
+        TurnstileVerifier $turnstileVerifier,
+        ThirdPartyMetaService $thirdPartyMetaService,
+        NotificationService $notificationService,
+        AiTutorService $aiTutorService,
     ): Response {
         if ($this->getUser() !== null) {
             return $this->redirectToRoute('app_entrypoint');
@@ -33,22 +42,79 @@ class RegistrationController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            $turnstileResult = $turnstileVerifier->verify(
+                (string) $request->request->get('cf-turnstile-response', ''),
+                $request->getClientIp(),
+            );
+
+            if ($turnstileResult['passed'] !== true) {
+                $form->addError(new FormError((string) $turnstileResult['message']));
+
+                return $this->render('registration/register.html.twig', [
+                    'registrationForm' => $form,
+                    'turnstileSiteKey' => $turnstileVerifier->getSiteKey(),
+                    'turnstileEnabled' => $turnstileVerifier->isEnabled(),
+                ]);
+            }
+
             $roleValue = (string) $form->get('role')->getData();
             $grade = $form->get('grade')->getData();
 
             $role = UserRole::from($roleValue);
             $user->assignRole($role);
             $user->setPassword($passwordHasher->hashPassword($user, (string) $form->get('plainPassword')->getData()));
+            $thirdPartyMetaService->record(
+                $user,
+                'CLOUDFLARE_TURNSTILE',
+                (string) ($turnstileResult['status']->value ?? 'SKIPPED'),
+                (string) ($turnstileResult['message'] ?? ''),
+                (array) ($turnstileResult['payload'] ?? []),
+                isset($turnstileResult['externalId']) ? (string) $turnstileResult['externalId'] : null,
+                isset($turnstileResult['latencyMs']) ? (int) $turnstileResult['latencyMs'] : null,
+            );
 
             if ($role === UserRole::Teacher) {
                 $teacherProfile = (new TeacherProfile())->setUser($user);
                 $user->setTeacherProfile($teacherProfile);
+
+                $onboarding = $aiTutorService->generateOnboardingTip('teacher', $user->getName(), null);
+                $thirdPartyMetaService->record(
+                    $teacherProfile,
+                    'OPENAI',
+                    (string) $onboarding['status']->value,
+                    (string) $onboarding['message'],
+                    ['tip' => $onboarding['tip']],
+                    null,
+                    isset($onboarding['latencyMs']) ? (int) $onboarding['latencyMs'] : null,
+                );
             } else {
                 $studentProfile = (new StudentProfile())
                     ->setUser($user)
                     ->setGrade(is_string($grade) && $grade !== '' ? $grade : null);
                 $user->setStudentProfile($studentProfile);
+
+                $onboarding = $aiTutorService->generateOnboardingTip('student', $user->getName(), is_string($grade) ? $grade : null);
+                $thirdPartyMetaService->record(
+                    $studentProfile,
+                    'OPENAI',
+                    (string) $onboarding['status']->value,
+                    (string) $onboarding['message'],
+                    ['tip' => $onboarding['tip']],
+                    null,
+                    isset($onboarding['latencyMs']) ? (int) $onboarding['latencyMs'] : null,
+                );
             }
+
+            $welcome = $notificationService->sendWelcomeEmail($user);
+            $thirdPartyMetaService->record(
+                $user,
+                'SYMFONY_MAILER',
+                (string) $welcome['status']->value,
+                (string) $welcome['message'],
+                (array) ($welcome['payload'] ?? []),
+                isset($welcome['externalId']) ? (string) $welcome['externalId'] : null,
+                null,
+            );
 
             $entityManager->persist($user);
             $entityManager->flush();
@@ -60,6 +126,8 @@ class RegistrationController extends AbstractController
 
         return $this->render('registration/register.html.twig', [
             'registrationForm' => $form,
+            'turnstileSiteKey' => $turnstileVerifier->getSiteKey(),
+            'turnstileEnabled' => $turnstileVerifier->isEnabled(),
         ]);
     }
 }

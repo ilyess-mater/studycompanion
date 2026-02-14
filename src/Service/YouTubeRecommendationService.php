@@ -15,12 +15,17 @@ class YouTubeRecommendationService
     ) {
     }
 
+    public function hasProvider(): bool
+    {
+        return $this->youtubeApiKey !== '';
+    }
+
     /**
      * @return list<array{title:string,url:string,channelName:string,score:float}>
      */
     public function recommend(string $query, int $limit = 5): array
     {
-        if ($this->youtubeApiKey === '') {
+        if (!$this->hasProvider()) {
             return $this->fallback($query, $limit);
         }
 

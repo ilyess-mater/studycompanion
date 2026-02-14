@@ -21,6 +21,14 @@
                         <div>
                             <strong>{{ group.name }}</strong>
                             <div class="note">{{ group.students|length }} students</div>
+                            {% set groupIntegrations = group.thirdPartyMeta.integrations ?? {} %}
+                            {% if groupIntegrations is not empty %}
+                                <div class="third-party-strip" style="margin-top:.35rem;">
+                                    {% for provider, integration in groupIntegrations %}
+                                        <span class="third-party-chip third-party-{{ integration.status|lower }}">{{ provider }} - {{ integration.status }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
                         </div>
                         <span class="badge badge-done">Invite {{ group.inviteCode }}</span>
                     </a>

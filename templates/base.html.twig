@@ -12,12 +12,18 @@
         {% block importmap %}{{ importmap('app') }}{% endblock %}
     {% endblock %}
 </head>
-<body class="{% if app.user %}app-authenticated{% else %}app-guest{% endif %}">
+<body
+    class="{% if app.user %}app-authenticated{% else %}app-guest{% endif %}"
+    data-controller="liquid-press theme"
+    data-action="pointerdown->liquid-press#press"
+>
 {% block layout %}
     {% set currentRoute = app.request.attributes.get('_route') %}
     {% if app.user %}
-        <div class="app-layout">
-            <aside class="sidebar">
+        <div class="app-layout is-sidebar-open" data-controller="shell">
+            <button type="button" class="sidebar-edge-trigger" data-action="mouseenter->shell#edgeEnter click->shell#openSidebar" aria-label="Open sidebar"></button>
+            <button type="button" class="sidebar-backdrop" data-action="click->shell#closeSidebar" aria-label="Close sidebar"></button>
+            <aside class="sidebar" data-action="mouseenter->shell#sidebarEnter mouseleave->shell#sidebarLeave">
                 <a class="brand-lockup" href="{{ path('app_entrypoint') }}">
                     <span class="logo-mark" aria-hidden="true">
                         <span class="logo-core">SC</span>
@@ -41,14 +47,15 @@
                         <a class="sidebar-link {{ currentRoute starts with 'student_lessons' or currentRoute == 'student_lesson_show' ? 'is-active' : '' }}" href="{{ path('student_lessons') }}">Lessons</a>
                         <a class="sidebar-link {{ currentRoute == 'student_reports' ? 'is-active' : '' }}" href="{{ path('student_reports') }}">Reports</a>
                         <a class="sidebar-link {{ currentRoute == 'student_group_join' ? 'is-active' : '' }}" href="{{ path('student_group_join') }}">Join Group</a>
+                        <a class="sidebar-link {{ currentRoute == 'app_settings' ? 'is-active' : '' }}" href="{{ path('app_settings') }}">Settings</a>
                     {% endif %}
                     {% if is_granted('ROLE_TEACHER') %}
                         <a class="sidebar-link {{ currentRoute == 'teacher_dashboard' ? 'is-active' : '' }}" href="{{ path('teacher_dashboard') }}">Dashboard</a>
                         <a class="sidebar-link {{ currentRoute starts with 'teacher_group' ? 'is-active' : '' }}" href="{{ path('teacher_groups') }}">Groups</a>
                         <a class="sidebar-link {{ currentRoute starts with 'teacher_lesson' ? 'is-active' : '' }}" href="{{ path('teacher_lessons') }}">Lessons</a>
                         <a class="sidebar-link {{ currentRoute == 'teacher_reports' or currentRoute == 'teacher_student_show' ? 'is-active' : '' }}" href="{{ path('teacher_reports') }}">Reports</a>
-                        <a class="sidebar-link {{ currentRoute == 'teacher_comments' ? 'is-active' : '' }}" href="{{ path('teacher_comments') }}">Comments</a>
                         <a class="sidebar-link {{ currentRoute == 'admin_health_check' ? 'is-active' : '' }}" href="{{ path('admin_health_check') }}">Health Check</a>
+                        <a class="sidebar-link {{ currentRoute == 'app_settings' ? 'is-active' : '' }}" href="{{ path('app_settings') }}">Settings</a>
                     {% endif %}
                 </nav>
 

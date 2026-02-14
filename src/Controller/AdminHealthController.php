@@ -11,6 +11,10 @@ use App\Entity\StudentProfile;
 use App\Entity\StudyGroup;
 use App\Entity\User;
 use App\Service\AiTutorService;
+use App\Service\NotificationService;
+use App\Service\PerspectiveModerationService;
+use App\Service\TurnstileVerifier;
+use App\Service\YouTubeRecommendationService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
@@ -32,6 +36,10 @@ class AdminHealthController extends AbstractController
         UserPasswordHasherInterface $passwordHasher,
         AiTutorService $aiTutorService,
         HttpClientInterface $httpClient,
+        TurnstileVerifier $turnstileVerifier,
+        YouTubeRecommendationService $youtubeRecommendationService,
+        PerspectiveModerationService $perspectiveModerationService,
+        NotificationService $notificationService,
     ): Response {
         $checks = [];
 
@@ -136,6 +144,128 @@ class AdminHealthController extends AbstractController
             'meta' => $aiMeta,
         ];
 
+        $turnstileStatus = 'warn';
+        $turnstileMessage = 'Turnstile is disabled.';
+        $turnstileMeta = [
+            'enabled' => $turnstileVerifier->isEnabled() ? 'yes' : 'no',
+            'siteKeyPrefix' => $turnstileVerifier->getSiteKey() !== '' ? mb_substr($turnstileVerifier->getSiteKey(), 0, 8).'***' : 'not set',
+        ];
+
+        try {
+            $turnstileSecret = trim((string) ($_ENV['TURNSTILE_SECRET_KEY'] ?? $_SERVER['TURNSTILE_SECRET_KEY'] ?? ''));
+            if ($turnstileVerifier->isEnabled()) {
+                $probe = $httpClient->request('POST', 'https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                    'body' => [
+                        'secret' => $turnstileSecret,
+                        'response' => 'health-check-token',
+                    ],
+                    'timeout' => 8,
+                ]);
+                $turnstileMeta['providerStatusCode'] = $probe->getStatusCode();
+                $turnstileStatus = 'pass';
+                $turnstileMessage = 'Turnstile configuration is enabled and provider is reachable.';
+            }
+        } catch (\Throwable $exception) {
+            $turnstileStatus = 'warn';
+            $turnstileMessage = 'Turnstile probe failed: '.$exception->getMessage();
+        }
+
+        $checks[] = [
+            'name' => 'Turnstile',
+            'status' => $turnstileStatus,
+            'message' => $turnstileMessage,
+            'meta' => $turnstileMeta,
+        ];
+
+        $youtubeStatus = 'warn';
+        $youtubeMessage = 'YouTube key missing. Fallback recommendation mode is active.';
+        $youtubeMeta = ['providerConfigured' => $youtubeRecommendationService->hasProvider() ? 'yes' : 'no'];
+
+        try {
+            $youtubeApiKey = trim((string) ($_ENV['YOUTUBE_API_KEY'] ?? $_SERVER['YOUTUBE_API_KEY'] ?? ''));
+            if ($youtubeRecommendationService->hasProvider()) {
+                $probe = $httpClient->request('GET', 'https://www.googleapis.com/youtube/v3/search', [
+                    'query' => [
+                        'key' => $youtubeApiKey,
+                        'part' => 'snippet',
+                        'type' => 'video',
+                        'maxResults' => 1,
+                        'q' => 'study companion health check',
+                    ],
+                    'timeout' => 8,
+                ]);
+                $youtubeMeta['providerStatusCode'] = $probe->getStatusCode();
+                $youtubeStatus = $probe->getStatusCode() < 300 ? 'pass' : 'warn';
+                $youtubeMessage = $probe->getStatusCode() < 300
+                    ? 'YouTube API is reachable.'
+                    : 'YouTube API returned non-success status.';
+            }
+        } catch (\Throwable $exception) {
+            $youtubeStatus = 'warn';
+            $youtubeMessage = 'YouTube probe failed: '.$exception->getMessage();
+        }
+
+        $checks[] = [
+            'name' => 'YouTube API',
+            'status' => $youtubeStatus,
+            'message' => $youtubeMessage,
+            'meta' => $youtubeMeta,
+        ];
+
+        $perspectiveStatus = 'warn';
+        $perspectiveMessage = 'Perspective API key missing. Moderation fallback mode is active.';
+        $perspectiveMeta = ['providerConfigured' => $perspectiveModerationService->isEnabled() ? 'yes' : 'no'];
+
+        try {
+            if ($perspectiveModerationService->isEnabled()) {
+                $moderation = $perspectiveModerationService->moderate('health check comment');
+                $perspectiveMeta['action'] = $moderation['action'];
+                $perspectiveMeta['score'] = $moderation['score'];
+                $perspectiveStatus = $moderation['status']->value === 'SUCCESS' ? 'pass' : 'warn';
+                $perspectiveMessage = $moderation['message'];
+            }
+        } catch (\Throwable $exception) {
+            $perspectiveStatus = 'warn';
+            $perspectiveMessage = 'Perspective probe failed: '.$exception->getMessage();
+        }
+
+        $checks[] = [
+            'name' => 'Perspective API',
+            'status' => $perspectiveStatus,
+            'message' => $perspectiveMessage,
+            'meta' => $perspectiveMeta,
+        ];
+
+        $mailerStatus = 'warn';
+        $mailerMessage = 'Mailer probe not executed.';
+        $mailerMeta = ['dsnConfigured' => trim((string) ($_ENV['MAILER_DSN'] ?? $_SERVER['MAILER_DSN'] ?? '')) !== '' ? 'yes' : 'no'];
+
+        try {
+            $probeUser = (new User())
+                ->setName('Mailer Health Probe')
+                ->setEmail('mailer-health-probe@example.local')
+                ->setPassword('not-used')
+                ->setRoles(['ROLE_STUDENT']);
+            $mailResult = $notificationService->sendWelcomeEmail($probeUser);
+
+            $mailerMeta['status'] = $mailResult['status']->value;
+            $mailerMeta['externalId'] = $mailResult['externalId'];
+            $mailerStatus = $mailResult['status']->value === 'SUCCESS'
+                ? 'pass'
+                : ($mailResult['status']->value === 'FAILED' ? 'fail' : 'warn');
+            $mailerMessage = $mailResult['message'];
+        } catch (\Throwable $exception) {
+            $mailerStatus = 'fail';
+            $mailerMessage = 'Mailer probe failed: '.$exception->getMessage();
+        }
+
+        $checks[] = [
+            'name' => 'Mailer',
+            'status' => $mailerStatus,
+            'message' => $mailerMessage,
+            'meta' => $mailerMeta,
+        ];
+
         $sampleLessonId = $entityManager->getRepository(Lesson::class)->findOneBy([], ['id' => 'DESC'])?->getId();
         $sampleGroupId = $entityManager->getRepository(StudyGroup::class)->findOneBy([], ['id' => 'DESC'])?->getId();
         $sampleStudentId = $entityManager->getRepository(StudentProfile::class)->findOneBy([], ['id' => 'DESC'])?->getId();
@@ -149,6 +279,7 @@ class AdminHealthController extends AbstractController
             ['name' => 'student_lessons', 'params' => []],
             ['name' => 'student_reports', 'params' => []],
             ['name' => 'student_group_join', 'params' => []],
+            ['name' => 'app_settings', 'params' => []],
             ['name' => 'student_lesson_show', 'params' => ['id' => $sampleLessonId]],
             ['name' => 'student_quiz_take', 'params' => ['id' => $sampleQuizId]],
             ['name' => 'teacher_dashboard', 'params' => []],
@@ -157,7 +288,6 @@ class AdminHealthController extends AbstractController
             ['name' => 'teacher_lessons', 'params' => []],
             ['name' => 'teacher_lesson_show', 'params' => ['id' => $sampleLessonId]],
             ['name' => 'teacher_reports', 'params' => []],
-            ['name' => 'teacher_comments', 'params' => []],
             ['name' => 'teacher_student_show', 'params' => ['id' => $sampleStudentId]],
             ['name' => 'admin_health_check', 'params' => []],
             ['name' => 'api_auth_token', 'params' => []],

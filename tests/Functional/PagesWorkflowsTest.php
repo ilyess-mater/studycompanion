@@ -54,6 +54,7 @@ class PagesWorkflowsTest extends WebTestCase
             '/student/reports',
             '/student/groups/join',
             '/student/quiz/'.$scenario['quizId'],
+            '/settings',
         ];
 
         foreach ($routes as $route) {
@@ -79,7 +80,7 @@ class PagesWorkflowsTest extends WebTestCase
             '/teacher/lessons/'.$scenario['lessonId'],
             '/teacher/reports',
             '/teacher/students/'.$scenario['studentProfileId'],
-            '/teacher/comments',
+            '/settings',
         ];
 
         foreach ($routes as $route) {
@@ -87,18 +88,40 @@ class PagesWorkflowsTest extends WebTestCase
             self::assertResponseIsSuccessful('Failed route: '.$route);
         }
 
-        $crawler = $this->client->request('GET', '/teacher/comments');
-        $form = $crawler->selectButton('Send comment')->form([
-            'teacher_global_comment[student]' => (string) $scenario['studentProfileId'],
-            'teacher_global_comment[content]' => 'Good progress, review weak topics tomorrow.',
+        $groupsPage = $this->client->request('GET', '/teacher/groups');
+        $groupForm = $groupsPage->selectButton('Create group')->form([
+            'study_group[name]' => 'Evidence Group',
+        ]);
+        $this->client->submit($groupForm);
+        self::assertResponseRedirects('/teacher/groups');
+
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        $newGroup = $entityManager->getRepository(StudyGroup::class)->findOneBy(['name' => 'Evidence Group']);
+        self::assertNotNull($newGroup);
+        self::assertArrayHasKey('YOUTUBE', ($newGroup->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+
+        $crawler = $this->client->request('GET', '/teacher/lessons/'.$scenario['lessonId']);
+        $form = $crawler->selectButton('Save Comment')->form([
+            'student_id' => (string) $scenario['studentProfileId'],
+            'content' => 'Good progress, review weak topics tomorrow.',
         ]);
 
         $this->client->submit($form);
-        self::assertResponseRedirects('/teacher/comments');
+        self::assertResponseRedirects('/teacher/lessons/'.$scenario['lessonId']);
 
         $this->client->followRedirect();
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('body', 'Good progress, review weak topics tomorrow.');
+
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        $savedComment = $entityManager->getRepository(TeacherComment::class)->findOneBy(
+            ['content' => 'Good progress, review weak topics tomorrow.'],
+            ['id' => 'DESC'],
+        );
+        self::assertNotNull($savedComment);
+        self::assertArrayHasKey('GOOGLE_PERSPECTIVE', ($savedComment->getThirdPartyMeta() ?? [])['integrations'] ?? []);
     }
 
     /**
@@ -177,6 +200,7 @@ class PagesWorkflowsTest extends WebTestCase
         $comment = (new TeacherComment())
             ->setTeacher($teacherProfile)
             ->setStudent($studentProfile)
+            ->setLesson($lesson)
             ->setContent('Initial teacher feedback.');
 
         foreach ([$teacherUser, $studentUser, $group, $lesson, $material, $quiz, $report, $comment] as $entity) {

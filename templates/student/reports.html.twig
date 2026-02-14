@@ -37,6 +37,10 @@
                             <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
                         </div>
                         <p>{{ comment.content }}</p>
+                        {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
+                        {% if moderation %}
+                            <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
+                        {% endif %}
                     </div>
                 {% else %}
                     <p class="note">No teacher comments yet.</p>
@@ -55,6 +59,7 @@
                     <th>Score</th>
                     <th>Mastery</th>
                     <th>Weak Topics</th>
+                    <th>Third-Party</th>
                     <th>Date</th>
                 </tr>
                 </thead>
@@ -67,11 +72,23 @@
                             <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span>
                         </td>
                         <td>{{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</td>
+                        <td>
+                            {% set reportIntegrations = report.thirdPartyMeta.integrations ?? {} %}
+                            {% if reportIntegrations is not empty %}
+                                <div class="third-party-strip">
+                                    {% for provider, integration in reportIntegrations %}
+                                        <span class="third-party-chip third-party-{{ integration.status|lower }}">{{ provider }} - {{ integration.status }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="note">No third-party evidence</span>
+                            {% endif %}
+                        </td>
                         <td>{{ report.createdAt|date('Y-m-d H:i') }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="5" class="note">No reports yet.</td>
+                        <td colspan="6" class="note">No reports yet.</td>
                     </tr>
                 {% endfor %}
                 </tbody>

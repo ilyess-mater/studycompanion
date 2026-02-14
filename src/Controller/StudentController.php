@@ -8,14 +8,19 @@ use App\Entity\Lesson;
 use App\Entity\StudentProfile;
 use App\Entity\TeacherComment;
 use App\Enum\ProcessingStatus;
+use App\Enum\ThirdPartyProvider;
+use App\Message\AnalyzeLessonMessage;
+use App\Message\GenerateQuizMessage;
 use App\Form\JoinGroupType;
 use App\Form\LessonUploadType;
-use App\Service\LessonWorkflowService;
+use App\Service\PerspectiveModerationService;
+use App\Service\ThirdPartyMetaService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\String\Slugger\SluggerInterface;
@@ -156,7 +161,7 @@ class StudentController extends AbstractController
         Request $request,
         EntityManagerInterface $entityManager,
         SluggerInterface $slugger,
-        LessonWorkflowService $lessonWorkflowService,
+        MessageBusInterface $messageBus,
     ): Response {
         $student = $this->currentStudentProfile();
         if ($student === null) {
@@ -189,8 +194,8 @@ class StudentController extends AbstractController
                 $entityManager->persist($lesson);
                 $entityManager->flush();
 
-                $lessonWorkflowService->processUploadedLesson((int) $lesson->getId());
-                $this->addFlash('success', 'Lesson uploaded and processed. Study materials and quiz are ready.');
+                $messageBus->dispatch(new AnalyzeLessonMessage((int) $lesson->getId()));
+                $this->addFlash('success', 'Lesson uploaded. AI analysis and generation started in background.');
 
                 return $this->redirectToRoute('student_lesson_show', ['id' => $lesson->getId()]);
             }
@@ -232,11 +237,17 @@ class StudentController extends AbstractController
             ['createdAt' => 'DESC'],
         );
 
+        $lessonComments = $entityManager->getRepository(TeacherComment::class)->findBy(
+            ['lesson' => $lesson, 'student' => $student],
+            ['createdAt' => 'ASC'],
+        );
+
         return $this->render('student/lesson_show.html.twig', [
             'lesson' => $lesson,
             'materials' => $materials,
             'latestQuiz' => $latestQuiz,
             'latestReport' => $latestReport,
+            'lessonComments' => $lessonComments,
         ]);
     }
 
@@ -245,7 +256,7 @@ class StudentController extends AbstractController
         int $id,
         Request $request,
         EntityManagerInterface $entityManager,
-        LessonWorkflowService $lessonWorkflowService,
+        MessageBusInterface $messageBus,
     ): Response {
         $student = $this->currentStudentProfile();
         if ($student === null) {
@@ -269,13 +280,101 @@ class StudentController extends AbstractController
         );
 
         $focusTopics = $latestReport?->getWeakTopics() ?? [];
-        $lessonWorkflowService->generateQuiz((int) $lesson->getId(), $focusTopics);
+        $messageBus->dispatch(new GenerateQuizMessage((int) $lesson->getId(), $focusTopics));
 
         $this->addFlash('success', $focusTopics === []
-            ? 'A fresh lesson-based quiz was generated.'
-            : 'A new adaptive quiz was generated from your weak topics.');
+            ? 'A fresh lesson-based quiz is being generated.'
+            : 'A new adaptive quiz is being generated from your weak topics.');
 
         return $this->redirectToRoute('student_lesson_show', ['id' => $id]);
+    }
+
+    #[Route('/lessons/{lessonId}/comments/{commentId}/reply', name: 'student_lesson_comment_reply', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
+    public function replyToLessonComment(
+        int $lessonId,
+        int $commentId,
+        Request $request,
+        EntityManagerInterface $entityManager,
+        PerspectiveModerationService $moderationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
+    ): Response {
+        $student = $this->currentStudentProfile();
+        if ($student === null) {
+            throw $this->createAccessDeniedException('Student profile is missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('student_reply_comment_'.$commentId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
+        if (!$lesson instanceof Lesson || $lesson->getUploadedBy()?->getId() !== $student->getId()) {
+            throw $this->createAccessDeniedException('You can only reply on your own lesson comments.');
+        }
+
+        $comment = $entityManager->getRepository(TeacherComment::class)->find($commentId);
+        if (!$comment instanceof TeacherComment
+            || $comment->getLesson()?->getId() !== $lesson->getId()
+            || $comment->getStudent()?->getId() !== $student->getId()) {
+            throw $this->createAccessDeniedException('Comment not found for this lesson.');
+        }
+
+        if (!$comment->isTeacherAuthor()) {
+            $this->addFlash('error', 'You can reply only to teacher comments.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $teacher = $comment->getTeacher();
+        if ($teacher === null) {
+            $this->addFlash('error', 'Teacher reference is missing for this comment.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $content = trim((string) $request->request->get('content', ''));
+        if (mb_strlen($content) < 2) {
+            $this->addFlash('error', 'Reply must contain at least 2 characters.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $moderation = $moderationService->moderate($content);
+        if ($moderation['allowed'] !== true) {
+            $this->addFlash('error', 'Reply blocked by moderation policy.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $reply = (new TeacherComment())
+            ->setTeacher($teacher)
+            ->setStudent($student)
+            ->setLesson($lesson)
+            ->setParentComment($comment)
+            ->setAuthorRole(TeacherComment::AUTHOR_STUDENT)
+            ->setContent($content);
+        $thirdPartyMetaService->record(
+            $reply,
+            ThirdPartyProvider::GooglePerspective,
+            $moderation['status'],
+            $moderation['message'],
+            [
+                'score' => $moderation['score'],
+                'warn' => $moderation['warn'],
+                'action' => $moderation['action'],
+            ],
+            null,
+            $moderation['latencyMs'],
+        );
+
+        $entityManager->persist($reply);
+        $entityManager->flush();
+
+        $this->addFlash('success', 'Your reply was sent.');
+
+        return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
     }
 
     #[Route('/groups/join', name: 'student_group_join')]
@@ -298,7 +397,8 @@ class StudentController extends AbstractController
             } else {
                 $student->setGroup($group);
                 $entityManager->flush();
-                $this->addFlash('success', 'You have joined the group '.$group->getName().'.');
+                $teacherName = $group->getTeacher()?->getUser()?->getName() ?? 'your teacher';
+                $this->addFlash('success', sprintf('You have joined the group %s (Teacher: %s).', $group->getName(), $teacherName));
 
                 return $this->redirectToRoute('student_dashboard');
             }
@@ -324,7 +424,7 @@ class StudentController extends AbstractController
         );
 
         $comments = $entityManager->getRepository(TeacherComment::class)->findBy(
-            ['student' => $student],
+            ['student' => $student, 'authorRole' => TeacherComment::AUTHOR_TEACHER],
             ['createdAt' => 'DESC'],
             20,
         );

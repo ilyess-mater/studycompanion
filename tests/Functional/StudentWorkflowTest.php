@@ -70,8 +70,19 @@ class StudentWorkflowTest extends WebTestCase
 
         $lesson = $lessonRepo->findOneBy(['title' => 'Algebra Intro']);
         self::assertNotNull($lesson, 'Lesson was not stored.');
+        self::assertArrayHasKey('OPENAI', ($lesson->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('YOUTUBE', ($lesson->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertGreaterThan(0, $materialRepo->count(['lesson' => $lesson]), 'AI materials were not generated.');
         self::assertGreaterThan(0, $quizRepo->count(['lesson' => $lesson]), 'Quiz was not generated.');
+
+        $material = $materialRepo->findOneBy(['lesson' => $lesson], ['id' => 'ASC']);
+        self::assertNotNull($material);
+        self::assertArrayHasKey('OPENAI', ($material->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('YOUTUBE', ($material->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+
+        $quiz = $quizRepo->findOneBy(['lesson' => $lesson], ['id' => 'DESC']);
+        self::assertNotNull($quiz);
+        self::assertArrayHasKey('OPENAI', ($quiz->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
         @unlink($filePath);
     }

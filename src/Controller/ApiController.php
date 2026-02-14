@@ -14,6 +14,7 @@ use App\Enum\FocusViolationType;
 use App\Repository\ApiTokenRepository;
 use App\Repository\UserRepository;
 use App\Service\ApiTokenService;
+use App\Service\ThirdPartyMetaService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -162,8 +163,13 @@ class ApiController extends AbstractController
     }
 
     #[Route('/lessons/{id}/processing-status', name: 'api_lesson_processing_status', methods: ['GET'])]
-    public function lessonStatus(int $id, Request $request, ApiTokenRepository $tokenRepository, EntityManagerInterface $entityManager): JsonResponse
-    {
+    public function lessonStatus(
+        int $id,
+        Request $request,
+        ApiTokenRepository $tokenRepository,
+        EntityManagerInterface $entityManager,
+        ThirdPartyMetaService $thirdPartyMetaService,
+    ): JsonResponse {
         $user = $this->resolveApiUser($request, $tokenRepository);
         if (!$user instanceof User) {
             return $this->json(['error' => 'unauthorized'], 401);
@@ -179,12 +185,18 @@ class ApiController extends AbstractController
             'processingStatus' => $lesson->getProcessingStatus()->value,
             'estimatedStudyMinutes' => $lesson->getEstimatedStudyMinutes(),
             'difficulty' => $lesson->getDifficulty()->value,
+            'thirdParty' => $thirdPartyMetaService->summarize($lesson->getThirdPartyMeta()),
         ]);
     }
 
     #[Route('/students/{id}/mastery', name: 'api_student_mastery', methods: ['GET'])]
-    public function masteryStatus(int $id, Request $request, ApiTokenRepository $tokenRepository, EntityManagerInterface $entityManager): JsonResponse
-    {
+    public function masteryStatus(
+        int $id,
+        Request $request,
+        ApiTokenRepository $tokenRepository,
+        EntityManagerInterface $entityManager,
+        ThirdPartyMetaService $thirdPartyMetaService,
+    ): JsonResponse {
         $user = $this->resolveApiUser($request, $tokenRepository);
         if (!$user instanceof User) {
             return $this->json(['error' => 'unauthorized'], 401);
@@ -222,11 +234,18 @@ class ApiController extends AbstractController
             $average = round($sum / count($reports), 2);
         }
 
+        $latestReport = $reports[0] ?? null;
+        $reportSummary = $latestReport !== null
+            ? $thirdPartyMetaService->summarize($latestReport->getThirdPartyMeta())
+            : $thirdPartyMetaService->summarize(null);
+
         return $this->json([
             'studentId' => $student->getId(),
             'reportsCount' => count($reports),
             'averageScore' => $average,
-            'latestStatus' => $reports[0]?->getMasteryStatus()->value ?? null,
+            'latestStatus' => $latestReport?->getMasteryStatus()->value ?? null,
+            'reportThirdParty' => $reportSummary,
+            'hasThirdPartyFeedback' => $reportSummary['total'] > 0,
         ]);
     }
 

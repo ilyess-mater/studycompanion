@@ -33,6 +33,22 @@ services:
         arguments:
             $youtubeApiKey: '%env(string:YOUTUBE_API_KEY)%'
 
+    App\Service\TurnstileVerifier:
+        arguments:
+            $enabled: '%env(bool:TURNSTILE_ENABLED)%'
+            $siteKey: '%env(string:TURNSTILE_SITE_KEY)%'
+            $secretKey: '%env(string:TURNSTILE_SECRET_KEY)%'
+            $strictMode: '%env(bool:THIRD_PARTY_STRICT_MODE)%'
+
+    App\Service\PerspectiveModerationService:
+        arguments:
+            $apiKey: '%env(string:GOOGLE_PERSPECTIVE_API_KEY)%'
+            $strictMode: '%env(bool:THIRD_PARTY_STRICT_MODE)%'
+
+    App\Service\NotificationService:
+        arguments:
+            $strictMode: '%env(bool:THIRD_PARTY_STRICT_MODE)%'
+
     Smalot\PdfParser\Parser: ~
 
     # add more service definitions when explicit configuration is needed

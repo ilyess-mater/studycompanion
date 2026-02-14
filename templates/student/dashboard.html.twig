@@ -10,6 +10,7 @@
             <p>Track your mastery through a full AI loop: analyze, study, quiz, and targeted remediation.</p>
             <div class="hero-badges">
                 <span>{{ student.group ? student.group.name : 'No group joined yet' }}</span>
+                <span>{{ student.group and student.group.teacher and student.group.teacher.user ? 'Teacher: ' ~ student.group.teacher.user.name : 'Teacher: Not assigned yet' }}</span>
                 <span>{{ dashboard.totalLessons }} lessons uploaded</span>
                 <span>{{ dashboard.totalReports }} quizzes completed</span>
             </div>
