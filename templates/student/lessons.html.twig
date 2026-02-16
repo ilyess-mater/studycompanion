@@ -10,14 +10,14 @@
             {{ form_start(lessonForm, {attr: {class: 'form-grid'}}) }}
                 {{ form_row(lessonForm.title) }}
                 {{ form_row(lessonForm.subject) }}
-                {{ form_row(lessonForm.lessonFile) }}
+                {{ form_row(lessonForm.lessonFile, {row_attr: {class: 'lesson-upload-file'}}) }}
                 <button type="submit" class="btn-primary">Upload and analyze</button>
             {{ form_end(lessonForm) }}
         </section>
 
         <section class="card">
             <h2>Your Lessons</h2>
-            <div class="list">
+            <div class="list lessons-list">
                 {% for lesson in lessons %}
                     <a class="list-item" href="{{ path('student_lesson_show', {id: lesson.id}) }}">
                         <div>

@@ -10,7 +10,7 @@ use App\Entity\Quiz;
 use App\Entity\StudentProfile;
 use App\Entity\StudyGroup;
 use App\Entity\User;
-use App\Service\AiTutorService;
+use App\Service\LearningAiService;
 use App\Service\NotificationService;
 use App\Service\PerspectiveModerationService;
 use App\Service\TurnstileVerifier;
@@ -34,7 +34,7 @@ class AdminHealthController extends AbstractController
         RouterInterface $router,
         UrlGeneratorInterface $urlGenerator,
         UserPasswordHasherInterface $passwordHasher,
-        AiTutorService $aiTutorService,
+        LearningAiService $learningAiService,
         HttpClientInterface $httpClient,
         TurnstileVerifier $turnstileVerifier,
         YouTubeRecommendationService $youtubeRecommendationService,
@@ -105,32 +105,61 @@ class AdminHealthController extends AbstractController
         ];
 
         $aiStatus = 'warn';
-        $aiMessage = 'OpenAI key missing. AI will use deterministic fallback mode.';
+        $aiMessage = 'AI provider fallback is active.';
         $aiMeta = [];
 
         try {
+            $providerState = $learningAiService->providerState();
             $openAiApiKey = trim((string) ($_ENV['OPENAI_API_KEY'] ?? $_SERVER['OPENAI_API_KEY'] ?? ''));
-            $aiMeta['providerConfigured'] = $aiTutorService->hasProvider() ? 'yes' : 'no';
-            $aiMeta['keyPrefix'] = $openAiApiKey !== '' ? mb_substr($openAiApiKey, 0, 7).'***' : 'not set';
+            $groqApiKey = trim((string) ($_ENV['GROQ_API_KEY'] ?? $_SERVER['GROQ_API_KEY'] ?? ''));
+            $openAiModel = trim((string) ($_ENV['OPENAI_MODEL'] ?? $_SERVER['OPENAI_MODEL'] ?? ''));
+            $aiMeta['configuredProvider'] = strtoupper((string) $providerState['configured']);
+            $aiMeta['activeProvider'] = (string) $providerState['active'];
+            $aiMeta['primaryAvailable'] = $providerState['primaryAvailable'] ? 'yes' : 'no';
+            $aiMeta['fallbackPolicy'] = (string) ($providerState['fallbackPolicy'] ?? 'n/a');
+            $aiMeta['openAiModel'] = $openAiModel !== '' ? $openAiModel : 'gpt-4o-mini';
+            $aiMeta['openAiKeyPrefix'] = $openAiApiKey !== '' ? mb_substr($openAiApiKey, 0, 7).'***' : 'not set';
+            $aiMeta['groqKeyPrefix'] = $groqApiKey !== '' ? mb_substr($groqApiKey, 0, 7).'***' : 'not set';
 
-            if ($aiTutorService->hasProvider()) {
-                $probe = $httpClient->request('GET', 'https://api.openai.com/v1/models', [
-                    'headers' => [
-                        'Authorization' => 'Bearer '.$openAiApiKey,
-                    ],
-                    'timeout' => 8,
-                ]);
-
-                $statusCode = $probe->getStatusCode();
-                $aiMeta['providerStatusCode'] = $statusCode;
-
-                if ($statusCode >= 200 && $statusCode < 300) {
-                    $aiStatus = 'pass';
-                    $aiMessage = 'OpenAI key is configured and provider is reachable.';
+            if ($providerState['configured'] === 'openai') {
+                if ($providerState['primaryAvailable']) {
+                    $probe = $httpClient->request('GET', 'https://api.openai.com/v1/models', [
+                        'headers' => [
+                            'Authorization' => 'Bearer '.$openAiApiKey,
+                        ],
+                        'timeout' => 8,
+                    ]);
+                    $statusCode = $probe->getStatusCode();
+                    $aiMeta['providerStatusCode'] = $statusCode;
+                    $aiStatus = $statusCode >= 200 && $statusCode < 300 ? 'pass' : 'warn';
+                    $aiMessage = $statusCode >= 200 && $statusCode < 300
+                        ? 'OpenAI key is configured and provider is reachable.'
+                        : 'OpenAI key exists but provider check returned status '.$statusCode.'.';
                 } else {
                     $aiStatus = 'warn';
-                    $aiMessage = 'OpenAI key exists but provider check returned status '.$statusCode.'.';
+                    $aiMessage = sprintf('OpenAI unavailable. Active fallback provider: %s.', (string) $providerState['active']);
                 }
+            } elseif ($providerState['configured'] === 'groq') {
+                if ($providerState['primaryAvailable']) {
+                    $probe = $httpClient->request('GET', 'https://api.groq.com/openai/v1/models', [
+                        'headers' => [
+                            'Authorization' => 'Bearer '.$groqApiKey,
+                        ],
+                        'timeout' => 8,
+                    ]);
+                    $statusCode = $probe->getStatusCode();
+                    $aiMeta['providerStatusCode'] = $statusCode;
+                    $aiStatus = $statusCode >= 200 && $statusCode < 300 ? 'pass' : 'warn';
+                    $aiMessage = $statusCode >= 200 && $statusCode < 300
+                        ? 'Groq key is configured and provider is reachable.'
+                        : 'Groq key exists but provider check returned status '.$statusCode.'.';
+                } else {
+                    $aiStatus = 'warn';
+                    $aiMessage = 'Groq unavailable. Local NLP fallback is active.';
+                }
+            } else {
+                $aiStatus = 'pass';
+                $aiMessage = 'Local NLP provider is active.';
             }
         } catch (\Throwable $exception) {
             $aiStatus = 'warn';

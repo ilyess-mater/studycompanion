@@ -9,6 +9,11 @@
         {% if student.group %}
             <p class="note" style="margin-top:.5rem;">Current group: <strong>{{ student.group.name }}</strong></p>
             <p class="note" style="margin-top:.35rem;">Teacher: <strong>{{ student.group.teacher and student.group.teacher.user ? student.group.teacher.user.name : 'Unavailable' }}</strong></p>
+            {{ include('partials/third_party_links.html.twig', {meta: student.group.thirdPartyMeta}) }}
+            <form method="post" action="{{ path('student_group_leave') }}" style="margin-top:.75rem;">
+                <input type="hidden" name="_token" value="{{ csrf_token('student_group_leave') }}">
+                <button type="submit" class="btn">Leave current group</button>
+            </form>
         {% endif %}
         {{ form_start(joinForm, {attr: {class: 'form-grid', style: 'margin-top:1rem;'}}) }}
             {{ form_row(joinForm.inviteCode) }}

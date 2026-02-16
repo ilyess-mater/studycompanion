@@ -9,7 +9,8 @@ use App\Entity\TeacherProfile;
 use App\Enum\UserRole;
 use App\Entity\User;
 use App\Form\RegistrationFormType;
-use App\Service\AiTutorService;
+use App\Service\EntityThirdPartyLinkRecorder;
+use App\Service\LearningAiService;
 use App\Service\NotificationService;
 use App\Service\ThirdPartyMetaService;
 use App\Service\TurnstileVerifier;
@@ -30,8 +31,9 @@ class RegistrationController extends AbstractController
         EntityManagerInterface $entityManager,
         TurnstileVerifier $turnstileVerifier,
         ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
         NotificationService $notificationService,
-        AiTutorService $aiTutorService,
+        LearningAiService $learningAiService,
     ): Response {
         if ($this->getUser() !== null) {
             return $this->redirectToRoute('app_entrypoint');
@@ -77,32 +79,34 @@ class RegistrationController extends AbstractController
                 $teacherProfile = (new TeacherProfile())->setUser($user);
                 $user->setTeacherProfile($teacherProfile);
 
-                $onboarding = $aiTutorService->generateOnboardingTip('teacher', $user->getName(), null);
+                $onboarding = $learningAiService->generateOnboardingTip('teacher', $user->getName(), null);
                 $thirdPartyMetaService->record(
                     $teacherProfile,
-                    'OPENAI',
-                    (string) $onboarding['status']->value,
-                    (string) $onboarding['message'],
-                    ['tip' => $onboarding['tip']],
+                    $onboarding['provider'],
+                    $onboarding['status'],
+                    $onboarding['message'],
+                    ['tip' => (string) ($onboarding['data']['tip'] ?? '')],
                     null,
-                    isset($onboarding['latencyMs']) ? (int) $onboarding['latencyMs'] : null,
+                    (int) $onboarding['latencyMs'],
                 );
+                $entityThirdPartyLinkRecorder->recordLinks($teacherProfile);
             } else {
                 $studentProfile = (new StudentProfile())
                     ->setUser($user)
                     ->setGrade(is_string($grade) && $grade !== '' ? $grade : null);
                 $user->setStudentProfile($studentProfile);
 
-                $onboarding = $aiTutorService->generateOnboardingTip('student', $user->getName(), is_string($grade) ? $grade : null);
+                $onboarding = $learningAiService->generateOnboardingTip('student', $user->getName(), is_string($grade) ? $grade : null);
                 $thirdPartyMetaService->record(
                     $studentProfile,
-                    'OPENAI',
-                    (string) $onboarding['status']->value,
-                    (string) $onboarding['message'],
-                    ['tip' => $onboarding['tip']],
+                    $onboarding['provider'],
+                    $onboarding['status'],
+                    $onboarding['message'],
+                    ['tip' => (string) ($onboarding['data']['tip'] ?? '')],
                     null,
-                    isset($onboarding['latencyMs']) ? (int) $onboarding['latencyMs'] : null,
+                    (int) $onboarding['latencyMs'],
                 );
+                $entityThirdPartyLinkRecorder->recordLinks($studentProfile);
             }
 
             $welcome = $notificationService->sendWelcomeEmail($user);
@@ -115,6 +119,7 @@ class RegistrationController extends AbstractController
                 isset($welcome['externalId']) ? (string) $welcome['externalId'] : null,
                 null,
             );
+            $entityThirdPartyLinkRecorder->recordLinks($user);
 
             $entityManager->persist($user);
             $entityManager->flush();

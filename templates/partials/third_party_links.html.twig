@@ -1,0 +1,20 @@
+{% set integrations = meta is defined and meta ? (meta.integrations ?? {}) : {} %}
+{% set webLink = integrations.WEB_LINK ?? null %}
+{% set links = webLink and webLink.payload.links is defined and webLink.payload.links is iterable ? webLink.payload.links : [] %}
+{% set safeLinks = [] %}
+{% for link in links %}
+    {% set label = (link.label ?? '')|trim %}
+    {% set url = (link.url ?? '')|trim %}
+    {% if label != '' and url != '' and (url starts with 'https://' or url starts with 'http://' or url starts with 'mailto:') %}
+        {% set safeLinks = safeLinks|merge([{label: label, url: url}]) %}
+    {% endif %}
+{% endfor %}
+{% if safeLinks is not empty %}
+    <div class="third-party-links">
+        {% for link in safeLinks %}
+            <a class="third-party-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+                {{ link.label }}
+            </a>
+        {% endfor %}
+    </div>
+{% endif %}

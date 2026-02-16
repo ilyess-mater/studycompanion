@@ -29,6 +29,7 @@
                                     {% endfor %}
                                 </div>
                             {% endif %}
+                            {{ include('partials/third_party_links.html.twig', {meta: group.thirdPartyMeta}) }}
                         </div>
                         <span class="badge badge-done">Invite {{ group.inviteCode }}</span>
                     </a>

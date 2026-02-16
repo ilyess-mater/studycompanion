@@ -29,6 +29,22 @@ services:
             $openAiApiKey: '%env(string:OPENAI_API_KEY)%'
             $openAiModel: '%env(string:OPENAI_MODEL)%'
 
+    App\Service\Ai\OpenAiAiProvider:
+        arguments:
+            $apiKey: '%env(string:OPENAI_API_KEY)%'
+            $model: '%env(string:OPENAI_MODEL)%'
+
+    App\Service\Ai\GroqAiProvider:
+        arguments:
+            $apiKey: '%env(string:GROQ_API_KEY)%'
+            $model: '%env(string:GROQ_MODEL)%'
+
+    App\Service\LearningAiService:
+        arguments:
+            $aiProvider: '%env(string:AI_PROVIDER)%'
+            $aiStrictMode: '%env(bool:AI_STRICT_MODE)%'
+            $aiFallbackProvider: '%env(string:AI_FALLBACK_PROVIDER)%'
+
     App\Service\YouTubeRecommendationService:
         arguments:
             $youtubeApiKey: '%env(string:YOUTUBE_API_KEY)%'

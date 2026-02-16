@@ -53,6 +53,47 @@
         </article>
     </section>
 
+    <section class="card dashboard-section" style="margin-bottom:1rem;">
+        <div class="section-head">
+            <h2>Student Group Mapping</h2>
+            <span class="pill">{{ dashboard.studentGroupRows|length }} students</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>Student Name</th>
+                    <th>Group Name</th>
+                    <th>Latest Score</th>
+                    <th>Mastery</th>
+                    <th>Last Activity</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in dashboard.studentGroupRows %}
+                    <tr>
+                        <td><a href="{{ path('teacher_student_show', {id: row.student.id}) }}">{{ row.studentName }}</a></td>
+                        <td>{{ row.groupName }}</td>
+                        <td>{{ row.latestScore is not null ? row.latestScore ~ '%' : 'No quiz yet' }}</td>
+                        <td>
+                            {% if row.latestMastery is not null %}
+                                <span class="badge {{ row.latestMastery == 'MASTERED' ? 'badge-mastered' : (row.latestMastery == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ row.latestMastery }}</span>
+                            {% else %}
+                                <span class="note">Not available</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.lastActivityAt ? row.lastActivityAt|date('Y-m-d H:i') : 'No activity yet' }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="note">No students assigned to your groups yet.</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     <div class="grid grid-2">
         <section class="card dashboard-section">
             <div class="section-head">
@@ -123,7 +164,7 @@
                 {% for report in dashboard.recentReports %}
                     <div class="report-item">
                         <div class="report-main">
-                            <strong>{{ report.student.user.name }} • {{ report.lesson.title }}</strong>
+                            <strong>{{ report.student.user.name }} | {{ report.lesson.title }}</strong>
                             <div class="note">{{ report.createdAt|date('Y-m-d H:i') }}</div>
                         </div>
                         <span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">
@@ -179,3 +220,4 @@
         </section>
     </div>
 {% endblock %}
+

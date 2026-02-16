@@ -9,7 +9,7 @@ StudyCompanion+ is a Symfony 7 web application implementing a personalized AI tu
 - Doctrine ORM + Migrations + Messenger
 - MySQL/MariaDB (XAMPP compatible)
 - Twig + Symfony UX Stimulus
-- OpenAI + YouTube + Cloudflare Turnstile + Google Perspective API
+- OpenAI (primary) + Groq/Local NLP fallback + YouTube + Cloudflare Turnstile + Google Perspective API
 
 ## Local setup (XAMPP)
 
@@ -66,14 +66,20 @@ StudyCompanion+ is a Symfony 7 web application implementing a personalized AI tu
 ## Notes
 
 - Focus mode in this MVP is browser-level (fullscreen + violation logging + timer). Full OS lock enforcement is deferred to Java desktop integration.
-- AI calls use OpenAI when `OPENAI_API_KEY` is configured; deterministic fallbacks are used otherwise.
+- AI runtime uses OpenAI as primary provider when `OPENAI_API_KEY` is configured, then automatically falls back to Groq and finally local deterministic NLP.
 - A `third_party_meta` JSON evidence payload is stored on all core diagram entities for provider traceability.
 8. Optional third-party keys (set in `.env.local`):
    ```dotenv
+   AI_PROVIDER=openai
+   AI_STRICT_MODE=0
+   AI_FALLBACK_PROVIDER=groq_local
+   OPENAI_API_KEY=...
+   OPENAI_MODEL=gpt-4o-mini
+   GROQ_API_KEY=...
+   GROQ_MODEL=llama-3.1-8b-instant
    TURNSTILE_ENABLED=1
    TURNSTILE_SITE_KEY=...
    TURNSTILE_SECRET_KEY=...
-   OPENAI_API_KEY=...
    YOUTUBE_API_KEY=...
    GOOGLE_PERSPECTIVE_API_KEY=...
    THIRD_PARTY_STRICT_MODE=0

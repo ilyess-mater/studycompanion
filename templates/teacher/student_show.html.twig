@@ -6,6 +6,8 @@
     <section class="card" style="margin-bottom:1rem;">
         <h1>{{ student.user.name }}</h1>
         <p>{{ student.user.email }}{% if student.grade %} | Grade {{ student.grade }}{% endif %}</p>
+        <p class="note" style="margin-top:.45rem;">Group: {{ student.group ? student.group.name : 'Not assigned' }}</p>
+        {{ include('partials/third_party_links.html.twig', {meta: student.thirdPartyMeta}) }}
     </section>
 
     <div class="grid grid-2">
@@ -20,6 +22,7 @@
                         </div>
                         <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
                         <div class="note">Weak topics: {{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</div>
+                        {{ include('partials/third_party_links.html.twig', {meta: report.thirdPartyMeta}) }}
                     </div>
                 {% else %}
                     <p class="note">No reports for this student.</p>
@@ -28,20 +31,20 @@
         </section>
 
         <section class="card">
-            <h2>Teacher Feedback</h2>
-            {{ form_start(commentForm, {attr: {class: 'form-grid'}}) }}
-                {{ form_row(commentForm.content) }}
-                <button type="submit" class="btn-primary">Post comment</button>
-            {{ form_end(commentForm) }}
-
+            <h2>Lesson Comments</h2>
+            <p class="note">Teacher comments are now created from each lesson report view to keep feedback linked to `lesson_id` and `student_id`.</p>
             <div class="list" style="margin-top:1rem;">
                 {% for comment in comments %}
                     <div class="list-item" style="flex-direction:column; align-items:flex-start;">
-                        <div class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</div>
+                        <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
+                            <strong>{{ comment.lesson ? comment.lesson.title : 'Lesson' }}</strong>
+                            <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                        </div>
                         <p>{{ comment.content }}</p>
+                        {{ include('partials/third_party_links.html.twig', {meta: comment.thirdPartyMeta}) }}
                     </div>
                 {% else %}
-                    <p class="note">No comments yet.</p>
+                    <p class="note">No lesson-linked comments yet.</p>
                 {% endfor %}
             </div>
         </section>

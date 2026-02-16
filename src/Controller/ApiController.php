@@ -8,6 +8,7 @@ use App\Entity\FocusSession;
 use App\Entity\FocusViolation;
 use App\Entity\Lesson;
 use App\Entity\StudentProfile;
+use App\Entity\TeacherComment;
 use App\Entity\User;
 use App\Enum\FocusSessionStatus;
 use App\Enum\FocusViolationType;
@@ -185,6 +186,8 @@ class ApiController extends AbstractController
             'processingStatus' => $lesson->getProcessingStatus()->value,
             'estimatedStudyMinutes' => $lesson->getEstimatedStudyMinutes(),
             'difficulty' => $lesson->getDifficulty()->value,
+            'aiProvider' => $this->latestIntegrationProvider($lesson->getThirdPartyMeta(), ['GROQ_FREE', 'LOCAL_NLP', 'OPENAI']),
+            'aiFallbackUsed' => $this->isAiFallback($lesson->getThirdPartyMeta()),
             'thirdParty' => $thirdPartyMetaService->summarize($lesson->getThirdPartyMeta()),
         ]);
     }
@@ -238,14 +241,25 @@ class ApiController extends AbstractController
         $reportSummary = $latestReport !== null
             ? $thirdPartyMetaService->summarize($latestReport->getThirdPartyMeta())
             : $thirdPartyMetaService->summarize(null);
+        $linkedFeedbackCount = (int) $entityManager->getRepository(TeacherComment::class)->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->where('c.student = :student')
+            ->andWhere('c.authorRole = :authorRole')
+            ->andWhere('c.lesson IS NOT NULL')
+            ->setParameter('student', $student)
+            ->setParameter('authorRole', TeacherComment::AUTHOR_TEACHER)
+            ->getQuery()
+            ->getSingleScalarResult();
 
         return $this->json([
             'studentId' => $student->getId(),
             'reportsCount' => count($reports),
             'averageScore' => $average,
             'latestStatus' => $latestReport?->getMasteryStatus()->value ?? null,
+            'latestWeakTopics' => $latestReport?->getWeakTopics() ?? [],
             'reportThirdParty' => $reportSummary,
             'hasThirdPartyFeedback' => $reportSummary['total'] > 0,
+            'hasLessonLinkedFeedback' => $linkedFeedbackCount > 0,
         ]);
     }
 
@@ -279,5 +293,66 @@ class ApiController extends AbstractController
         $token = $tokenRepository->findValidByRawToken($rawToken);
 
         return $token?->getUser();
+    }
+
+    /**
+     * @param array<string, mixed>|null $meta
+     * @param list<string> $providerKeys
+     */
+    private function latestIntegrationProvider(?array $meta, array $providerKeys): ?string
+    {
+        if (!is_array($meta)) {
+            return null;
+        }
+
+        $integrations = $meta['integrations'] ?? null;
+        if (!is_array($integrations)) {
+            return null;
+        }
+
+        $latestProvider = null;
+        $latestCheckedAt = null;
+        foreach ($providerKeys as $providerKey) {
+            $integration = $integrations[$providerKey] ?? null;
+            if (!is_array($integration)) {
+                continue;
+            }
+
+            $checkedAt = isset($integration['checkedAt']) ? (string) $integration['checkedAt'] : '';
+            if ($latestProvider === null || $checkedAt > (string) $latestCheckedAt) {
+                $latestProvider = $providerKey;
+                $latestCheckedAt = $checkedAt;
+            }
+        }
+
+        return $latestProvider;
+    }
+
+    /**
+     * @param array<string, mixed>|null $meta
+     */
+    private function isAiFallback(?array $meta): bool
+    {
+        if (!is_array($meta)) {
+            return false;
+        }
+
+        $integrations = $meta['integrations'] ?? null;
+        if (!is_array($integrations)) {
+            return false;
+        }
+
+        foreach (['LOCAL_NLP', 'GROQ_FREE', 'OPENAI'] as $provider) {
+            $integration = $integrations[$provider] ?? null;
+            if (!is_array($integration)) {
+                continue;
+            }
+            $status = strtoupper((string) ($integration['status'] ?? ''));
+            if ($status === 'FALLBACK') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -28,26 +28,59 @@
         </section>
 
         <section class="card">
-            <h2>Teacher Feedback</h2>
-            <div class="list" style="margin-top:1rem;">
-                {% for comment in comments %}
-                    <div class="list-item" style="flex-direction:column; align-items:flex-start;">
-                        <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
-                            <strong>{{ comment.teacher.user.name }}</strong>
-                            <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
-                        </div>
-                        <p>{{ comment.content }}</p>
-                        {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
-                        {% if moderation %}
-                            <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
-                        {% endif %}
-                    </div>
-                {% else %}
-                    <p class="note">No teacher comments yet.</p>
-                {% endfor %}
+            <h2>Lesson-Linked Teacher Feedback</h2>
+            <div class="table-wrap" style="margin-top:1rem;">
+                <table>
+                <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Lesson</th>
+                    <th>Subject</th>
+                    <th>Teacher</th>
+                    <th>Comment</th>
+                    <th>Links</th>
+                    <th>Date</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for comment in linkedFeedback %}
+                        <tr>
+                            <td>{{ student.user.name }}</td>
+                            <td>{{ comment.lesson.title }}</td>
+                            <td>{{ comment.lesson.subject }}</td>
+                            <td>{{ comment.teacher.user.name }}</td>
+                            <td>{{ comment.content }}</td>
+                            <td>{{ include('partials/third_party_links.html.twig', {meta: comment.thirdPartyMeta}) }}</td>
+                            <td>{{ comment.createdAt|date('Y-m-d H:i') }}</td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="note">No lesson-linked feedback yet.</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </section>
     </div>
+
+    <section class="card" style="margin-bottom:1rem;">
+        <h2>Legacy Feedback</h2>
+        <div class="list" style="margin-top:1rem;">
+            {% for comment in legacyFeedback %}
+                <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                    <div style="width:100%; display:flex; justify-content:space-between; gap:.8rem;">
+                        <strong>{{ comment.teacher.user.name }}</strong>
+                        <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                    </div>
+                    <p>{{ comment.content }}</p>
+                    {{ include('partials/third_party_links.html.twig', {meta: comment.thirdPartyMeta}) }}
+                </div>
+            {% else %}
+                <p class="note">No legacy feedback records.</p>
+            {% endfor %}
+        </div>
+    </section>
 
     <section class="card">
         <h2>All Report Entries</h2>
@@ -59,6 +92,7 @@
                     <th>Score</th>
                     <th>Mastery</th>
                     <th>Weak Topics</th>
+                    <th>AI Explanation</th>
                     <th>Third-Party</th>
                     <th>Date</th>
                 </tr>
@@ -73,6 +107,16 @@
                         </td>
                         <td>{{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</td>
                         <td>
+                            {% set integrations = report.thirdPartyMeta.integrations ?? {} %}
+                            {% set explanation = '' %}
+                            {% for providerKey in ['GROQ_FREE', 'LOCAL_NLP', 'OPENAI'] %}
+                                {% if explanation == '' and integrations[providerKey] is defined and integrations[providerKey].payload.evaluationExplanation is defined %}
+                                    {% set explanation = integrations[providerKey].payload.evaluationExplanation %}
+                                {% endif %}
+                            {% endfor %}
+                            {{ explanation != '' ? explanation : 'No explanation available yet.' }}
+                        </td>
+                        <td>
                             {% set reportIntegrations = report.thirdPartyMeta.integrations ?? {} %}
                             {% if reportIntegrations is not empty %}
                                 <div class="third-party-strip">
@@ -83,12 +127,13 @@
                             {% else %}
                                 <span class="note">No third-party evidence</span>
                             {% endif %}
+                            {{ include('partials/third_party_links.html.twig', {meta: report.thirdPartyMeta}) }}
                         </td>
                         <td>{{ report.createdAt|date('Y-m-d H:i') }}</td>
                     </tr>
-                {% else %}
+                    {% else %}
                     <tr>
-                        <td colspan="6" class="note">No reports yet.</td>
+                        <td colspan="7" class="note">No reports yet.</td>
                     </tr>
                 {% endfor %}
                 </tbody>

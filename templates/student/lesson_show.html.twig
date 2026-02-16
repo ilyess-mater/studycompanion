@@ -17,6 +17,7 @@
                 {% endfor %}
             </div>
         {% endif %}
+        {{ include('partials/third_party_links.html.twig', {meta: lesson.thirdPartyMeta}) }}
         <div style="display:flex; gap:.7rem; flex-wrap:wrap; margin-top:1rem;">
             {% if latestQuiz %}
                 <a href="{{ path('student_quiz_take', {id: latestQuiz.id}) }}" class="btn btn-primary" style="display:inline-flex;">Start Adaptive Quiz</a>
@@ -35,6 +36,17 @@
                 <div>
                     <strong>Score {{ latestReport.quizScore }}%</strong>
                     <div class="note">Weak topics: {{ latestReport.weakTopics is not empty ? latestReport.weakTopics|join(', ') : 'None' }}</div>
+                    {% set latestIntegrations = latestReport.thirdPartyMeta.integrations ?? {} %}
+                    {% set explanation = '' %}
+                    {% for providerKey in ['GROQ_FREE', 'LOCAL_NLP', 'OPENAI'] %}
+                        {% if explanation == '' and latestIntegrations[providerKey] is defined and latestIntegrations[providerKey].payload.evaluationExplanation is defined %}
+                            {% set explanation = latestIntegrations[providerKey].payload.evaluationExplanation %}
+                        {% endif %}
+                    {% endfor %}
+                    {% if explanation != '' %}
+                        <div class="note">AI explanation: {{ explanation }}</div>
+                    {% endif %}
+                    {{ include('partials/third_party_links.html.twig', {meta: latestReport.thirdPartyMeta}) }}
                 </div>
                 <span class="badge {{ latestReport.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (latestReport.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ latestReport.masteryStatus.value }}</span>
             </div>
@@ -43,36 +55,71 @@
 
     <section class="card" style="margin-bottom:1rem;">
         <h2>Teacher Discussion</h2>
-        <div class="list">
-            {% for comment in lessonComments %}
-                <article class="list-item" style="align-items:flex-start; flex-direction:column;">
-                    <div style="width:100%; display:flex; justify-content:space-between; gap:.7rem;">
-                        <strong>
-                            {% if comment.authorRole == 'ROLE_TEACHER' %}
-                                {{ comment.teacher and comment.teacher.user ? comment.teacher.user.name : 'Teacher' }}
-                            {% else %}
-                                You
+        <div class="chat-container" data-controller="chat-actions">
+            <div class="chat-thread">
+                {% for comment in lessonComments %}
+                    {% set isMine = comment.authorRole == 'ROLE_STUDENT' %}
+                    <article class="chat-row {{ isMine ? 'chat-row-me' : 'chat-row-peer' }}">
+                        <div class="chat-bubble {{ isMine ? 'chat-bubble-me' : 'chat-bubble-peer' }}">
+                            <div class="chat-header">
+                                <strong class="chat-author">
+                                    {% if comment.authorRole == 'ROLE_TEACHER' %}
+                                        {{ comment.teacher and comment.teacher.user ? comment.teacher.user.name : 'Teacher' }}
+                                    {% else %}
+                                        You
+                                    {% endif %}
+                                </strong>
+                                <span class="chat-time">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                            </div>
+                            <p class="chat-text">{{ comment.content }}</p>
+                            {% if comment.updatedAt %}
+                                <span class="chat-edited">(edited)</span>
                             {% endif %}
-                        </strong>
-                        <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                            {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
+                            {% if moderation %}
+                                <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
+                            {% endif %}
+                        </div>
+                        {% if isMine %}
+                            <button
+                                type="button"
+                                class="chat-actions-btn"
+                                data-action="chat-actions#toggleMenu"
+                                data-comment-id="{{ comment.id }}"
+                                aria-label="Message actions"
+                                title="Delete message"
+                            >⋯</button>
+                            <div class="chat-actions-menu" data-chat-actions-menu data-comment-id="{{ comment.id }}" hidden>
+                                <form method="post" action="{{ path('student_lesson_comment_delete', {lessonId: lesson.id, commentId: comment.id}) }}" onsubmit="return confirm('Delete this message?');">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('student_comment_delete_' ~ comment.id) }}">
+                                    <button type="submit" class="action-item action-delete">Delete</button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </article>
+                {% else %}
+                    <div class="chat-empty">
+                        <p class="note">No discussion yet for this lesson.</p>
                     </div>
-                    <p>{{ comment.content }}</p>
-                    {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
-                    {% if moderation %}
-                        <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
-                    {% endif %}
+                {% endfor %}
+            </div>
 
+            {% if lessonComments %}
+                {% set hasTeacherMessage = false %}
+                {% for comment in lessonComments %}
                     {% if comment.authorRole == 'ROLE_TEACHER' %}
-                        <form method="post" action="{{ path('student_lesson_comment_reply', {lessonId: lesson.id, commentId: comment.id}) }}" class="form-grid" style="width:100%; margin-top:.45rem;">
-                            <input type="hidden" name="_token" value="{{ csrf_token('student_reply_comment_' ~ comment.id) }}">
-                            <textarea name="content" rows="2" maxlength="2000" minlength="2" required placeholder="Reply to your teacher..."></textarea>
-                            <button type="submit" class="btn">Send Reply</button>
-                        </form>
+                        {% set hasTeacherMessage = true %}
                     {% endif %}
-                </article>
-            {% else %}
-                <p class="note">No discussion yet for this lesson.</p>
-            {% endfor %}
+                {% endfor %}
+
+                {% if hasTeacherMessage %}
+                    <form method="post" action="{{ path('student_lesson_comment_reply', {lessonId: lesson.id, commentId: lessonComments|last.id}) }}" class="chat-composer chat-composer-bottom">
+                        <input type="hidden" name="_token" value="{{ csrf_token('student_reply_comment_' ~ (lessonComments|last.id ?? 0)) }}">
+                        <textarea name="content" maxlength="2000" minlength="2" required placeholder="Type your reply..."></textarea>
+                        <button type="submit" class="btn-primary">Send</button>
+                    </form>
+                {% endif %}
+            {% endif %}
         </div>
     </section>
 
@@ -93,6 +140,7 @@
                             {% endfor %}
                         </div>
                     {% endif %}
+                    {{ include('partials/third_party_links.html.twig', {meta: material.thirdPartyMeta}) }}
                     {% if material.summary %}
                         <p>{{ material.summary }}</p>
                     {% elseif material.flashcards %}

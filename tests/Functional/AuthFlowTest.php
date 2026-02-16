@@ -44,8 +44,10 @@ class AuthFlowTest extends WebTestCase
         self::assertArrayHasKey('integrations', $user->getThirdPartyMeta() ?? []);
         self::assertArrayHasKey('CLOUDFLARE_TURNSTILE', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertArrayHasKey('SYMFONY_MAILER', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertNotNull($user->getStudentProfile());
-        self::assertArrayHasKey('OPENAI', ($user->getStudentProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        $this->assertHasAnyAiIntegration(($user->getStudentProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($user->getStudentProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
         $this->client->request('GET', '/login');
         $this->client->submitForm('Sign in', [
@@ -77,8 +79,10 @@ class AuthFlowTest extends WebTestCase
         self::assertArrayHasKey('integrations', $user->getThirdPartyMeta() ?? []);
         self::assertArrayHasKey('CLOUDFLARE_TURNSTILE', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertArrayHasKey('SYMFONY_MAILER', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($user->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertNotNull($user->getTeacherProfile());
-        self::assertArrayHasKey('OPENAI', ($user->getTeacherProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        $this->assertHasAnyAiIntegration(($user->getTeacherProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($user->getTeacherProfile()?->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
         $this->client->request('GET', '/login');
         $this->client->submitForm('Sign in', [
@@ -87,5 +91,17 @@ class AuthFlowTest extends WebTestCase
         ]);
 
         self::assertResponseRedirects('/teacher/dashboard');
+    }
+
+    /**
+     * @param array<string, mixed> $integrations
+     */
+    private function assertHasAnyAiIntegration(array $integrations): void
+    {
+        $hasAi = array_key_exists('GROQ_FREE', $integrations)
+            || array_key_exists('LOCAL_NLP', $integrations)
+            || array_key_exists('OPENAI', $integrations);
+
+        self::assertTrue($hasAi, 'Expected one AI integration key: GROQ_FREE, LOCAL_NLP, or OPENAI.');
     }
 }

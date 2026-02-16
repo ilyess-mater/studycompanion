@@ -12,11 +12,13 @@ use App\Entity\StudentAnswer;
 use App\Entity\StudentProfile;
 use App\Enum\FocusSessionStatus;
 use App\Enum\FocusViolationType;
+use App\Enum\MasteryStatus;
 use App\Enum\ThirdPartyProvider;
 use App\Enum\ThirdPartyStatus;
 use App\Message\GenerateMaterialsMessage;
 use App\Message\GenerateQuizMessage;
-use App\Service\AiTutorService;
+use App\Service\EntityThirdPartyLinkRecorder;
+use App\Service\LearningAiService;
 use App\Service\PerformanceAnalyzer;
 use App\Service\ThirdPartyMetaService;
 use App\Service\YouTubeRecommendationService;
@@ -38,9 +40,10 @@ class QuizController extends AbstractController
         Request $request,
         EntityManagerInterface $entityManager,
         PerformanceAnalyzer $performanceAnalyzer,
-        AiTutorService $aiTutorService,
+        LearningAiService $learningAiService,
         YouTubeRecommendationService $youtubeRecommendationService,
         ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
         MessageBusInterface $messageBus,
     ): Response {
         $student = $this->currentStudentProfile();
@@ -69,6 +72,23 @@ class QuizController extends AbstractController
             $times = $request->request->all('response_times');
 
             $analysis = $performanceAnalyzer->analyze($quiz->getQuestions()->toArray(), $answers, $times);
+            $evaluation = $learningAiService->evaluateQuizSubmission($analysis['answerStats'], [
+                'lessonTitle' => $lesson?->getTitle() ?? 'Lesson',
+                'lessonSubject' => $lesson?->getSubject() ?? 'General',
+            ]);
+            $evaluatedScore = (float) ($evaluation['data']['score'] ?? $analysis['score']);
+            $score = ($evaluatedScore >= 0 && $evaluatedScore <= 100) ? $evaluatedScore : (float) $analysis['score'];
+            $weakTopics = $evaluation['data']['weakTopics'] ?? [];
+            if (!is_array($weakTopics) || $weakTopics === []) {
+                $weakTopics = $analysis['weakTopics'];
+            }
+            $weakTopics = array_values(array_unique(array_filter(array_map(static fn (mixed $topic): string => trim((string) $topic), $weakTopics))));
+
+            $masteryStatus = match (true) {
+                $score >= 85 => MasteryStatus::Mastered,
+                $score >= 60 => MasteryStatus::NeedsReview,
+                default => MasteryStatus::NotMastered,
+            };
 
             foreach ($analysis['answerStats'] as $row) {
                 $studentAnswer = (new StudentAnswer())
@@ -81,30 +101,31 @@ class QuizController extends AbstractController
                 if ($row['isCorrect'] === true) {
                     $thirdPartyMetaService->record(
                         $studentAnswer,
-                        ThirdPartyProvider::OpenAi,
+                        $evaluation['provider'],
                         ThirdPartyStatus::Skipped,
                         'Misconception analysis skipped for correct answer.',
                         ['correct' => true],
                     );
                 } else {
-                    $misconception = $aiTutorService->analyzeMisconception(
+                    $misconception = $learningAiService->analyzeMisconception(
                         $row['question']->getText(),
                         $row['question']->getCorrectAnswer(),
                         $row['answer'],
                     );
                     $thirdPartyMetaService->record(
                         $studentAnswer,
-                        ThirdPartyProvider::OpenAi,
+                        $misconception['provider'],
                         $misconception['status'],
                         $misconception['message'],
                         [
-                            'label' => $misconception['label'],
-                            'confidence' => $misconception['confidence'],
+                            'label' => $misconception['data']['label'],
+                            'confidence' => $misconception['data']['confidence'],
                         ],
                         null,
                         $misconception['latencyMs'],
                     );
                 }
+                $entityThirdPartyLinkRecorder->recordLinks($studentAnswer);
                 $entityManager->persist($studentAnswer);
             }
 
@@ -112,30 +133,31 @@ class QuizController extends AbstractController
                 ->setStudent($student)
                 ->setLesson($lesson)
                 ->setQuiz($quiz)
-                ->setQuizScore($analysis['score'])
-                ->setWeakTopics($analysis['weakTopics'])
-                ->setMasteryStatus($analysis['masteryStatus']);
+                ->setQuizScore($score)
+                ->setWeakTopics($weakTopics)
+                ->setMasteryStatus($masteryStatus);
 
-            $remediation = $aiTutorService->buildRemediationNarrative(
-                $analysis['weakTopics'],
-                (float) $analysis['score'],
+            $remediation = $learningAiService->summarizeWeakTopics(
+                $weakTopics,
+                $score,
                 $lesson?->getTitle() ?? 'Lesson',
             );
             $thirdPartyMetaService->record(
                 $report,
-                ThirdPartyProvider::OpenAi,
+                $remediation['provider'],
                 $remediation['status'],
                 $remediation['message'],
                 [
-                    'summary' => $remediation['summary'],
-                    'weakTopics' => $analysis['weakTopics'],
-                    'score' => $analysis['score'],
+                    'summary' => $remediation['data']['summary'],
+                    'evaluationExplanation' => (string) ($evaluation['data']['explanation'] ?? ''),
+                    'weakTopics' => $weakTopics,
+                    'score' => $score,
                 ],
                 null,
                 $remediation['latencyMs'],
             );
 
-            $youtubeQuery = trim(($lesson?->getSubject() ?? '').' '.implode(' ', array_slice($analysis['weakTopics'], 0, 3)));
+            $youtubeQuery = trim(($lesson?->getSubject() ?? '').' '.implode(' ', array_slice($weakTopics, 0, 3)));
             $youtubeResults = $youtubeRecommendationService->recommend($youtubeQuery !== '' ? $youtubeQuery : ($lesson?->getTitle() ?? 'study'), 3);
             $thirdPartyMetaService->record(
                 $report,
@@ -153,6 +175,7 @@ class QuizController extends AbstractController
                     ),
                 ],
             );
+            $entityThirdPartyLinkRecorder->recordLinks($report);
             $entityManager->persist($report);
 
             $focusSession
@@ -161,14 +184,14 @@ class QuizController extends AbstractController
 
             $entityManager->flush();
 
-            if ($analysis['weakTopics'] !== []) {
+            if ($weakTopics !== []) {
                 $existingVersionCount = $entityManager->getRepository('App\\Entity\\StudyMaterial')->count(['lesson' => $lesson]);
                 $nextVersion = max(2, (int) floor($existingVersionCount / 4) + 1);
-                $messageBus->dispatch(new GenerateMaterialsMessage((int) $lesson->getId(), $analysis['weakTopics'], $nextVersion));
-                $messageBus->dispatch(new GenerateQuizMessage((int) $lesson->getId(), $analysis['weakTopics']));
+                $messageBus->dispatch(new GenerateMaterialsMessage((int) $lesson->getId(), $weakTopics, $nextVersion));
+                $messageBus->dispatch(new GenerateQuizMessage((int) $lesson->getId(), $weakTopics));
             }
 
-            $this->addFlash('success', sprintf('Quiz completed. Score: %.2f%%', $analysis['score']));
+            $this->addFlash('success', sprintf('Quiz completed. Score: %.2f%%', $score));
 
             return $this->redirectToRoute('student_reports');
         }

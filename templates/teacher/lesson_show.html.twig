@@ -15,6 +15,7 @@
                 {% endfor %}
             </div>
         {% endif %}
+        {{ include('partials/third_party_links.html.twig', {meta: lesson.thirdPartyMeta}) }}
     </section>
 
     <div class="grid grid-2">
@@ -35,6 +36,7 @@
                                 {% endfor %}
                             </div>
                         {% endif %}
+                        {{ include('partials/third_party_links.html.twig', {meta: material.thirdPartyMeta}) }}
                         {% if material.summary %}
                             <p>{{ material.summary }}</p>
                         {% elseif material.flashcards %}
@@ -65,33 +67,58 @@
                         <div class="note">Score {{ report.quizScore }}% | {{ report.createdAt|date('Y-m-d H:i') }}</div>
                         <div class="note">Weak topics: {{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</div>
 
-                        <div class="note" style="margin-top:.5rem; font-weight:700;">Discussion</div>
-                        <div style="width:100%; display:grid; gap:.45rem; margin-top:.3rem;">
-                            {% set thread = commentsByStudent[report.student.id] ?? [] %}
-                            {% for comment in thread %}
-                                <div class="discussion-message {{ comment.authorRole == 'ROLE_TEACHER' ? 'discussion-teacher' : 'discussion-student' }}">
-                                    <div style="display:flex; justify-content:space-between; gap:.8rem;">
-                                        <strong>{{ comment.authorRole == 'ROLE_TEACHER' ? 'Teacher' : report.student.user.name }}</strong>
-                                        <span class="note">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                        <div class="note" style="margin-top:.5rem; font-weight:700;">Discussion with {{ report.student.user.name }}</div>
+                        <div class="chat-container" data-controller="chat-actions" style="margin-top:.35rem;">
+                            <div class="chat-thread">
+                                {% set thread = commentsByStudent[report.student.id] ?? [] %}
+                                {% for comment in thread %}
+                                    {% set isMine = comment.authorRole == 'ROLE_TEACHER' %}
+                                    <article class="chat-row {{ isMine ? 'chat-row-me' : 'chat-row-peer' }}">
+                                        <div class="chat-bubble {{ isMine ? 'chat-bubble-me' : 'chat-bubble-peer' }}">
+                                            <div class="chat-header">
+                                                <strong class="chat-author">{{ comment.authorRole == 'ROLE_TEACHER' ? 'Teacher' : report.student.user.name }}</strong>
+                                                <span class="chat-time">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                                            </div>
+                                            <p class="chat-text">{{ comment.content }}</p>
+                                            {% if comment.updatedAt %}
+                                                <span class="chat-edited">(edited)</span>
+                                            {% endif %}
+                                            {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
+                                            {% if moderation %}
+                                                <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
+                                            {% endif %}
+                                        </div>
+                                        {% if isMine %}
+                                            <button
+                                                type="button"
+                                                class="chat-actions-btn"
+                                                data-action="chat-actions#toggleMenu"
+                                                data-comment-id="{{ comment.id }}"
+                                                aria-label="Message actions"
+                                                title="Edit or delete"
+                                            >⋯</button>
+                                            <div class="chat-actions-menu" data-chat-actions-menu data-comment-id="{{ comment.id }}" hidden>
+                                                <form method="post" action="{{ path('teacher_lesson_comment_delete', {lessonId: lesson.id, commentId: comment.id}) }}" onsubmit="return confirm('Delete this message?');">
+                                                    <input type="hidden" name="_token" value="{{ csrf_token('teacher_comment_delete_' ~ comment.id) }}">
+                                                    <button type="submit" class="action-item action-delete">Delete</button>
+                                                </form>
+                                            </div>
+                                        {% endif %}
+                                    </article>
+                                {% else %}
+                                    <div class="chat-empty">
+                                        <p class="note">No comments yet for this student on this lesson.</p>
                                     </div>
-                                    <p style="margin-top:.3rem;">{{ comment.content }}</p>
-                                    {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
-                                    {% if moderation %}
-                                        <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
-                                    {% endif %}
-                                </div>
-                            {% else %}
-                                <p class="note">No comments yet for this student on this lesson.</p>
-                            {% endfor %}
-                        </div>
+                                {% endfor %}
+                            </div>
 
-                        <form method="post" action="{{ path('teacher_lesson_comment_add', {id: lesson.id}) }}" class="form-grid" style="width:100%; margin-top:.7rem;">
-                            <input type="hidden" name="_token" value="{{ csrf_token('teacher_lesson_comment_' ~ lesson.id) }}">
-                            <input type="hidden" name="student_id" value="{{ report.student.id }}">
-                            <label for="teacher-comment-{{ report.student.id }}">Add comment to {{ report.student.user.name }}</label>
-                            <textarea id="teacher-comment-{{ report.student.id }}" name="content" rows="3" required minlength="3" maxlength="3000" placeholder="Write targeted feedback for this lesson..."></textarea>
-                            <button type="submit" class="btn-primary">Save Comment</button>
-                        </form>
+                            <form method="post" action="{{ path('teacher_lesson_comment_add', {id: lesson.id}) }}" class="chat-composer chat-composer-bottom">
+                                <input type="hidden" name="_token" value="{{ csrf_token('teacher_lesson_comment_' ~ lesson.id) }}">
+                                <input type="hidden" name="student_id" value="{{ report.student.id }}">
+                                <textarea name="content" maxlength="3000" minlength="3" required placeholder="Write your feedback or reply..."></textarea>
+                                <button type="submit" class="btn-primary">Send</button>
+                            </form>
+                        </div>
                     </div>
                 {% else %}
                     <p class="note">No reports submitted yet.</p>

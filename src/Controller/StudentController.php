@@ -13,6 +13,7 @@ use App\Message\AnalyzeLessonMessage;
 use App\Message\GenerateQuizMessage;
 use App\Form\JoinGroupType;
 use App\Form\LessonUploadType;
+use App\Service\EntityThirdPartyLinkRecorder;
 use App\Service\PerspectiveModerationService;
 use App\Service\ThirdPartyMetaService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -36,6 +37,10 @@ class StudentController extends AbstractController
         if ($student === null) {
             throw $this->createAccessDeniedException('Student profile is missing.');
         }
+
+        $group = $student->getGroup();
+        $teacherName = $group?->getTeacher()?->getUser()?->getName();
+        $groupName = $group?->getName();
 
         $recentLessons = $entityManager->getRepository(Lesson::class)->findBy(
             ['uploadedBy' => $student],
@@ -152,6 +157,9 @@ class StudentController extends AbstractController
                 'nextAction' => $nextAction,
                 'subjectProgress' => array_values($subjectProgress),
                 'topWeakTopics' => array_slice(array_keys($weakTopicFrequency), 0, 5),
+                'groupJoined' => $group !== null,
+                'groupName' => $groupName,
+                'teacherName' => $teacherName,
             ],
         ]);
     }
@@ -297,6 +305,7 @@ class StudentController extends AbstractController
         EntityManagerInterface $entityManager,
         PerspectiveModerationService $moderationService,
         ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
     ): Response {
         $student = $this->currentStudentProfile();
         if ($student === null) {
@@ -368,11 +377,131 @@ class StudentController extends AbstractController
             null,
             $moderation['latencyMs'],
         );
+        $entityThirdPartyLinkRecorder->recordLinks($reply);
 
         $entityManager->persist($reply);
         $entityManager->flush();
 
         $this->addFlash('success', 'Your reply was sent.');
+
+        return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+    }
+
+    #[Route('/lessons/{lessonId}/comments/{commentId}/edit', name: 'student_lesson_comment_edit', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
+    public function editLessonComment(
+        int $lessonId,
+        int $commentId,
+        Request $request,
+        EntityManagerInterface $entityManager,
+        PerspectiveModerationService $moderationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
+    ): Response {
+        $student = $this->currentStudentProfile();
+        if ($student === null) {
+            throw $this->createAccessDeniedException('Student profile is missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('student_comment_edit_'.$commentId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
+        if (!$lesson instanceof Lesson || $lesson->getUploadedBy()?->getId() !== $student->getId()) {
+            throw $this->createAccessDeniedException('You can only edit replies on your own lessons.');
+        }
+
+        $comment = $entityManager->getRepository(TeacherComment::class)->find($commentId);
+        if (!$comment instanceof TeacherComment
+            || $comment->getLesson()?->getId() !== $lesson->getId()
+            || $comment->getStudent()?->getId() !== $student->getId()) {
+            throw $this->createNotFoundException('Comment not found.');
+        }
+
+        if (!$comment->isStudentAuthor()) {
+            throw $this->createAccessDeniedException('You can edit only your own replies.');
+        }
+
+        $content = trim((string) $request->request->get('content', ''));
+        if (mb_strlen($content) < 2 || mb_strlen($content) > 2000) {
+            $this->addFlash('error', 'Reply must contain between 2 and 2000 characters.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $moderation = $moderationService->moderate($content);
+        if ($moderation['allowed'] !== true) {
+            $this->addFlash('error', 'Reply blocked by moderation policy.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $comment
+            ->setContent($content)
+            ->setUpdatedAt(new \DateTimeImmutable());
+
+        $thirdPartyMetaService->record(
+            $comment,
+            ThirdPartyProvider::GooglePerspective,
+            $moderation['status'],
+            $moderation['message'],
+            [
+                'score' => $moderation['score'],
+                'warn' => $moderation['warn'],
+                'action' => $moderation['action'],
+            ],
+            null,
+            $moderation['latencyMs'],
+        );
+        $entityThirdPartyLinkRecorder->recordLinks($comment);
+
+        $entityManager->flush();
+
+        $this->addFlash('success', 'Reply updated.');
+
+        return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+    }
+
+    #[Route('/lessons/{lessonId}/comments/{commentId}/delete', name: 'student_lesson_comment_delete', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
+    public function deleteLessonComment(
+        int $lessonId,
+        int $commentId,
+        Request $request,
+        EntityManagerInterface $entityManager,
+    ): Response {
+        $student = $this->currentStudentProfile();
+        if ($student === null) {
+            throw $this->createAccessDeniedException('Student profile is missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('student_comment_delete_'.$commentId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
+        if (!$lesson instanceof Lesson || $lesson->getUploadedBy()?->getId() !== $student->getId()) {
+            throw $this->createAccessDeniedException('You can only delete replies on your own lessons.');
+        }
+
+        $comment = $entityManager->getRepository(TeacherComment::class)->find($commentId);
+        if (!$comment instanceof TeacherComment
+            || $comment->getLesson()?->getId() !== $lesson->getId()
+            || $comment->getStudent()?->getId() !== $student->getId()) {
+            throw $this->createNotFoundException('Comment not found.');
+        }
+
+        if (!$comment->isStudentAuthor()) {
+            throw $this->createAccessDeniedException('You can delete only your own replies.');
+        }
+
+        $entityManager->remove($comment);
+        $entityManager->flush();
+
+        $this->addFlash('success', 'Reply deleted.');
 
         return $this->redirectToRoute('student_lesson_show', ['id' => $lessonId]);
     }
@@ -410,6 +539,34 @@ class StudentController extends AbstractController
         ]);
     }
 
+    #[Route('/groups/leave', name: 'student_group_leave', methods: ['POST'])]
+    public function leaveGroup(Request $request, EntityManagerInterface $entityManager): Response
+    {
+        $student = $this->currentStudentProfile();
+        if ($student === null) {
+            throw $this->createAccessDeniedException('Student profile is missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('student_group_leave', (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('student_group_join');
+        }
+
+        if ($student->getGroup() === null) {
+            $this->addFlash('success', 'You are not currently assigned to any group.');
+
+            return $this->redirectToRoute('student_group_join');
+        }
+
+        $student->setGroup(null);
+        $entityManager->flush();
+
+        $this->addFlash('success', 'You left the group successfully.');
+
+        return $this->redirectToRoute('student_group_join');
+    }
+
     #[Route('/reports', name: 'student_reports')]
     public function reports(EntityManagerInterface $entityManager): Response
     {
@@ -423,11 +580,35 @@ class StudentController extends AbstractController
             ['createdAt' => 'DESC'],
         );
 
-        $comments = $entityManager->getRepository(TeacherComment::class)->findBy(
-            ['student' => $student, 'authorRole' => TeacherComment::AUTHOR_TEACHER],
-            ['createdAt' => 'DESC'],
-            20,
-        );
+        $linkedFeedback = $entityManager->createQueryBuilder()
+            ->select('c', 't', 'tu', 'l')
+            ->from(TeacherComment::class, 'c')
+            ->join('c.teacher', 't')
+            ->join('t.user', 'tu')
+            ->join('c.lesson', 'l')
+            ->where('c.student = :student')
+            ->andWhere('c.authorRole = :authorRole')
+            ->setParameter('student', $student)
+            ->setParameter('authorRole', TeacherComment::AUTHOR_TEACHER)
+            ->orderBy('c.createdAt', 'DESC')
+            ->setMaxResults(40)
+            ->getQuery()
+            ->getResult();
+
+        $legacyFeedback = $entityManager->createQueryBuilder()
+            ->select('c', 't', 'tu')
+            ->from(TeacherComment::class, 'c')
+            ->join('c.teacher', 't')
+            ->join('t.user', 'tu')
+            ->where('c.student = :student')
+            ->andWhere('c.authorRole = :authorRole')
+            ->andWhere('c.lesson IS NULL')
+            ->setParameter('student', $student)
+            ->setParameter('authorRole', TeacherComment::AUTHOR_TEACHER)
+            ->orderBy('c.createdAt', 'DESC')
+            ->setMaxResults(20)
+            ->getQuery()
+            ->getResult();
 
         $totalReports = count($reports);
         $averageScore = 0.0;
@@ -454,7 +635,8 @@ class StudentController extends AbstractController
         return $this->render('student/reports.html.twig', [
             'reports' => $reports,
             'student' => $student,
-            'comments' => $comments,
+            'linkedFeedback' => $linkedFeedback,
+            'legacyFeedback' => $legacyFeedback,
             'summary' => [
                 'averageScore' => $averageScore,
                 'masteredCount' => $masteredCount,

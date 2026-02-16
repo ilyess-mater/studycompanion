@@ -6,16 +6,24 @@
     <section class="card">
         <h1>{{ group.name }}</h1>
         <p>Invite code: <strong>{{ group.inviteCode }}</strong></p>
+        {{ include('partials/third_party_links.html.twig', {meta: group.thirdPartyMeta}) }}
         <h2 style="margin-top:1rem;">Students</h2>
         <div class="list">
             {% for student in group.students %}
-                <a class="list-item" href="{{ path('teacher_student_show', {id: student.id}) }}">
+                <div class="list-item">
                     <div>
                         <strong>{{ student.user.name }}</strong>
                         <div class="note">{{ student.user.email }}{% if student.grade %} | Grade {{ student.grade }}{% endif %}</div>
+                        {{ include('partials/third_party_links.html.twig', {meta: student.thirdPartyMeta}) }}
                     </div>
-                    <span class="btn">View</span>
-                </a>
+                    <div style="display:flex; gap:.4rem; align-items:center;">
+                        <a class="btn" href="{{ path('teacher_student_show', {id: student.id}) }}">View</a>
+                        <form method="post" action="{{ path('teacher_group_student_remove', {groupId: group.id, studentId: student.id}) }}">
+                            <input type="hidden" name="_token" value="{{ csrf_token('teacher_group_remove_student_' ~ group.id ~ '_' ~ student.id) }}">
+                            <button type="submit" class="btn">Remove</button>
+                        </form>
+                    </div>
+                </div>
             {% else %}
                 <p class="note">No students joined this group yet.</p>
             {% endfor %}

@@ -14,6 +14,7 @@
                     <th>Score</th>
                     <th>Mastery</th>
                     <th>Weak Topics</th>
+                    <th>Links</th>
                     <th>Date</th>
                 </tr>
                 </thead>
@@ -25,11 +26,12 @@
                         <td>{{ report.quizScore }}%</td>
                         <td><span class="badge {{ report.masteryStatus.value == 'MASTERED' ? 'badge-mastered' : (report.masteryStatus.value == 'NEEDS_REVIEW' ? 'badge-needs-review' : 'badge-not-mastered') }}">{{ report.masteryStatus.value }}</span></td>
                         <td>{{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</td>
+                        <td>{{ include('partials/third_party_links.html.twig', {meta: report.thirdPartyMeta}) }}</td>
                         <td>{{ report.createdAt|date('Y-m-d H:i') }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="6" class="note">No reports yet.</td>
+                        <td colspan="7" class="note">No reports yet.</td>
                     </tr>
                 {% endfor %}
                 </tbody>

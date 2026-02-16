@@ -10,6 +10,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'teacher_comment')]
+#[ORM\Index(name: 'idx_teacher_comment_student_lesson_created', columns: ['student_id', 'lesson_id', 'created_at'])]
 class TeacherComment
 {
     use ThirdPartyMetaTrait;
@@ -46,6 +47,9 @@ class TeacherComment
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $updatedAt = null;
 
     public function __construct()
     {
@@ -143,5 +147,17 @@ class TeacherComment
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getUpdatedAt(): ?\DateTimeImmutable
+    {
+        return $this->updatedAt;
+    }
+
+    public function setUpdatedAt(?\DateTimeImmutable $updatedAt): static
+    {
+        $this->updatedAt = $updatedAt;
+
+        return $this;
     }
 }

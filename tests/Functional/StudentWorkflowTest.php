@@ -70,20 +70,35 @@ class StudentWorkflowTest extends WebTestCase
 
         $lesson = $lessonRepo->findOneBy(['title' => 'Algebra Intro']);
         self::assertNotNull($lesson, 'Lesson was not stored.');
-        self::assertArrayHasKey('OPENAI', ($lesson->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        $this->assertHasAnyAiIntegration(($lesson->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertArrayHasKey('YOUTUBE', ($lesson->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($lesson->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertGreaterThan(0, $materialRepo->count(['lesson' => $lesson]), 'AI materials were not generated.');
         self::assertGreaterThan(0, $quizRepo->count(['lesson' => $lesson]), 'Quiz was not generated.');
 
         $material = $materialRepo->findOneBy(['lesson' => $lesson], ['id' => 'ASC']);
         self::assertNotNull($material);
-        self::assertArrayHasKey('OPENAI', ($material->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        $this->assertHasAnyAiIntegration(($material->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertArrayHasKey('YOUTUBE', ($material->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($material->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
         $quiz = $quizRepo->findOneBy(['lesson' => $lesson], ['id' => 'DESC']);
         self::assertNotNull($quiz);
-        self::assertArrayHasKey('OPENAI', ($quiz->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        $this->assertHasAnyAiIntegration(($quiz->getThirdPartyMeta() ?? [])['integrations'] ?? []);
+        self::assertArrayHasKey('WEB_LINK', ($quiz->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
         @unlink($filePath);
+    }
+
+    /**
+     * @param array<string, mixed> $integrations
+     */
+    private function assertHasAnyAiIntegration(array $integrations): void
+    {
+        $hasAi = array_key_exists('GROQ_FREE', $integrations)
+            || array_key_exists('LOCAL_NLP', $integrations)
+            || array_key_exists('OPENAI', $integrations);
+
+        self::assertTrue($hasAi, 'Expected one AI integration key: GROQ_FREE, LOCAL_NLP, or OPENAI.');
     }
 }

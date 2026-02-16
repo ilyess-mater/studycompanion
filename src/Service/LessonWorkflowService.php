@@ -10,9 +10,9 @@ use App\Entity\Question;
 use App\Entity\Quiz;
 use App\Entity\StudyMaterial;
 use App\Entity\VideoRecommendation;
+use App\Enum\LessonDifficulty;
 use App\Enum\MaterialType;
 use App\Enum\ProcessingStatus;
-use App\Enum\ThirdPartyProvider;
 use App\Enum\ThirdPartyStatus;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -21,9 +21,10 @@ class LessonWorkflowService
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly LessonTextExtractor $textExtractor,
-        private readonly AiTutorService $aiTutorService,
+        private readonly LearningAiService $learningAiService,
         private readonly YouTubeRecommendationService $youtubeRecommendationService,
         private readonly ThirdPartyMetaService $thirdPartyMetaService,
+        private readonly EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
     ) {
     }
 
@@ -56,36 +57,40 @@ class LessonWorkflowService
             $lesson->setProcessingStatus(ProcessingStatus::Running);
             $rawText = $this->extractLessonText($lesson);
 
-            $analysis = $this->aiTutorService->analyzeLesson($rawText);
+            $analysisResult = $this->learningAiService->analyzeLesson($rawText);
+            $analysis = $analysisResult['data'];
+            $difficulty = LessonDifficulty::tryFrom((string) ($analysis['difficulty'] ?? '')) ?? LessonDifficulty::Medium;
 
             $lesson
-                ->setDifficulty($analysis['difficulty'])
-                ->setEstimatedStudyMinutes($analysis['estimatedStudyMinutes'])
-                ->setLearningObjectives($analysis['learningObjectives'])
+                ->setDifficulty($difficulty)
+                ->setEstimatedStudyMinutes((int) $analysis['estimatedStudyMinutes'])
+                ->setLearningObjectives((array) $analysis['learningObjectives'])
                 ->setAnalysisData([
-                    'topics' => $analysis['topics'],
-                    'keyConcepts' => $analysis['keyConcepts'],
+                    'topics' => (array) $analysis['topics'],
+                    'keyConcepts' => (array) $analysis['keyConcepts'],
                     'sourceExcerpt' => mb_substr($rawText, 0, 1200),
                 ])
-                ->setProcessingStatus($this->aiTutorService->hasProvider() ? ProcessingStatus::Done : ProcessingStatus::PartialFallback);
+                ->setProcessingStatus($analysisResult['fallbackUsed'] ? ProcessingStatus::PartialFallback : ProcessingStatus::Done);
 
             $this->thirdPartyMetaService->record(
                 $lesson,
-                ThirdPartyProvider::OpenAi,
-                $this->aiTutorService->hasProvider() ? ThirdPartyStatus::Success : ThirdPartyStatus::Fallback,
-                'Lesson analysis completed.',
+                $analysisResult['provider'],
+                $analysisResult['status'],
+                $analysisResult['message'],
                 [
                     'topicsCount' => count($analysis['topics']),
                     'keyConceptsCount' => count($analysis['keyConcepts']),
                     'estimatedStudyMinutes' => $analysis['estimatedStudyMinutes'],
+                    'fallbackUsed' => $analysisResult['fallbackUsed'],
                 ],
                 null,
-                (int) ((microtime(true) - $start) * 1000),
+                (int) $analysisResult['latencyMs'],
             );
+            $this->entityThirdPartyLinkRecorder->recordLinks($lesson);
 
             $jobLog
                 ->setProviderStatus('DONE')
-                ->setUsedFallback(!$this->aiTutorService->hasProvider())
+                ->setUsedFallback((bool) $analysisResult['fallbackUsed'])
                 ->setLatencyMs((int) ((microtime(true) - $start) * 1000));
 
             $this->entityManager->persist($jobLog);
@@ -96,11 +101,12 @@ class LessonWorkflowService
             $lesson->setProcessingStatus(ProcessingStatus::Failed);
             $this->thirdPartyMetaService->record(
                 $lesson,
-                ThirdPartyProvider::OpenAi,
+                $this->learningAiService->providerState()['active'],
                 ThirdPartyStatus::Failed,
                 'Lesson analysis failed: '.$exception->getMessage(),
                 ['error' => $exception->getMessage()],
             );
+            $this->entityThirdPartyLinkRecorder->recordLinks($lesson);
             $jobLog
                 ->setProviderStatus('FAILED')
                 ->setUsedFallback(true)
@@ -132,32 +138,33 @@ class LessonWorkflowService
 
         try {
             $rawText = $this->extractLessonText($lesson);
-            $materials = $this->aiTutorService->generateMaterials($rawText, $weakTopics);
+            $materialsResult = $this->learningAiService->generateMaterials($rawText, $weakTopics);
+            $materials = $materialsResult['data'];
 
             $summary = (new StudyMaterial())
                 ->setLesson($lesson)
                 ->setType(MaterialType::Summary)
-                ->setSummary($materials['summary'])
-                ->setContent($materials['summary'])
+                ->setSummary((string) $materials['summary'])
+                ->setContent((string) $materials['summary'])
                 ->setVersion($version);
 
             $flashcards = (new StudyMaterial())
                 ->setLesson($lesson)
                 ->setType(MaterialType::Flashcards)
-                ->setFlashcards($materials['flashcards'])
+                ->setFlashcards((array) $materials['flashcards'])
                 ->setContent(json_encode($materials['flashcards'], JSON_PRETTY_PRINT) ?: '[]')
                 ->setVersion($version);
 
             $explanation = (new StudyMaterial())
                 ->setLesson($lesson)
                 ->setType(MaterialType::Explanation)
-                ->setContent(implode("\n\n", $materials['explanations']))
+                ->setContent(implode("\n\n", (array) $materials['explanations']))
                 ->setVersion($version);
 
             $example = (new StudyMaterial())
                 ->setLesson($lesson)
                 ->setType(MaterialType::Example)
-                ->setContent(implode("\n\n", $materials['examples']))
+                ->setContent(implode("\n\n", (array) $materials['examples']))
                 ->setVersion($version);
 
             $this->entityManager->persist($summary);
@@ -179,7 +186,7 @@ class LessonWorkflowService
                 $this->entityManager->persist($video);
             }
 
-            $openAiStatus = $this->aiTutorService->hasProvider() ? ThirdPartyStatus::Success : ThirdPartyStatus::Fallback;
+            $aiStatus = $materialsResult['status'];
             $youTubeStatus = $this->youtubeRecommendationService->hasProvider() ? ThirdPartyStatus::Success : ThirdPartyStatus::Fallback;
             $videoPayload = [
                 'query' => $videoQuery,
@@ -196,35 +203,41 @@ class LessonWorkflowService
             foreach ([$summary, $flashcards, $explanation, $example] as $material) {
                 $this->thirdPartyMetaService->record(
                     $material,
-                    ThirdPartyProvider::OpenAi,
-                    $openAiStatus,
-                    'Study material generated.',
-                    ['type' => $material->getType()->value, 'version' => $version],
+                    $materialsResult['provider'],
+                    $aiStatus,
+                    $materialsResult['message'],
+                    [
+                        'type' => $material->getType()->value,
+                        'version' => $version,
+                        'fallbackUsed' => $materialsResult['fallbackUsed'],
+                    ],
                 );
                 $this->thirdPartyMetaService->record(
                     $material,
-                    ThirdPartyProvider::Youtube,
+                    \App\Enum\ThirdPartyProvider::Youtube,
                     $youTubeStatus,
                     'Video recommendations linked.',
                     $videoPayload,
                 );
+                $this->entityThirdPartyLinkRecorder->recordLinks($material);
             }
 
             $this->thirdPartyMetaService->record(
                 $lesson,
-                ThirdPartyProvider::Youtube,
+                \App\Enum\ThirdPartyProvider::Youtube,
                 $youTubeStatus,
                 'Lesson recommendations updated.',
                 $videoPayload,
             );
+            $this->entityThirdPartyLinkRecorder->recordLinks($lesson);
 
             if ($lesson->getProcessingStatus() !== ProcessingStatus::Failed) {
-                $lesson->setProcessingStatus($this->aiTutorService->hasProvider() ? ProcessingStatus::Done : ProcessingStatus::PartialFallback);
+                $lesson->setProcessingStatus($materialsResult['fallbackUsed'] ? ProcessingStatus::PartialFallback : ProcessingStatus::Done);
             }
 
             $jobLog
                 ->setProviderStatus('DONE')
-                ->setUsedFallback(!$this->aiTutorService->hasProvider())
+                ->setUsedFallback((bool) $materialsResult['fallbackUsed'])
                 ->setLatencyMs((int) ((microtime(true) - $start) * 1000));
 
             $this->entityManager->persist($jobLog);
@@ -232,11 +245,12 @@ class LessonWorkflowService
         } catch (\Throwable $exception) {
             $this->thirdPartyMetaService->record(
                 $lesson,
-                ThirdPartyProvider::OpenAi,
+                $this->learningAiService->providerState()['active'],
                 ThirdPartyStatus::Failed,
                 'Material generation failed: '.$exception->getMessage(),
                 ['error' => $exception->getMessage()],
             );
+            $this->entityThirdPartyLinkRecorder->recordLinks($lesson);
             $jobLog
                 ->setProviderStatus('FAILED')
                 ->setUsedFallback(true)
@@ -275,7 +289,7 @@ class LessonWorkflowService
                 ->setLesson($lesson)
                 ->setDifficulty($lesson->getDifficulty());
 
-            $questions = $this->aiTutorService->generateQuizQuestions($rawText, 8, [
+            $questionsResult = $this->learningAiService->generateQuizQuestions($rawText, 8, [
                 'title' => $lesson->getTitle(),
                 'subject' => $lesson->getSubject(),
                 'difficulty' => $lesson->getDifficulty()->value,
@@ -283,6 +297,7 @@ class LessonWorkflowService
                 'keyConcepts' => $analysisConcepts,
                 'weakTopics' => $focusTopics,
             ]);
+            $questions = $questionsResult['data'];
 
             foreach ($questions as $row) {
                 $question = (new Question())
@@ -291,41 +306,44 @@ class LessonWorkflowService
                     ->setOptions($row['options'])
                     ->setCorrectAnswer($row['correctAnswer']);
 
-                $tagging = $this->aiTutorService->tagQuestionConcept(
+                $tagging = $this->learningAiService->tagQuestionConcept(
                     $row['text'],
                     $rawText,
                     $lesson->getSubject(),
                 );
                 $this->thirdPartyMetaService->record(
                     $question,
-                    ThirdPartyProvider::OpenAi,
+                    $tagging['provider'],
                     $tagging['status'],
                     $tagging['message'],
                     [
-                        'tags' => $tagging['tags'],
-                        'difficultyHint' => $tagging['hint'],
+                        'tags' => $tagging['data']['tags'],
+                        'difficultyHint' => $tagging['data']['hint'],
                     ],
                     null,
                     $tagging['latencyMs'],
                 );
+                $this->entityThirdPartyLinkRecorder->recordLinks($question);
                 $quiz->addQuestion($question);
             }
 
             $this->thirdPartyMetaService->record(
                 $quiz,
-                ThirdPartyProvider::OpenAi,
-                $this->aiTutorService->hasProvider() ? ThirdPartyStatus::Success : ThirdPartyStatus::Fallback,
-                'Quiz generated from lesson content.',
+                $questionsResult['provider'],
+                $questionsResult['status'],
+                $questionsResult['message'],
                 [
                     'questionCount' => count($questions),
                     'focusTopics' => $focusTopics,
+                    'fallbackUsed' => $questionsResult['fallbackUsed'],
                 ],
             );
+            $this->entityThirdPartyLinkRecorder->recordLinks($quiz);
 
             $this->entityManager->persist($quiz);
             $jobLog
                 ->setProviderStatus('DONE')
-                ->setUsedFallback(!$this->aiTutorService->hasProvider())
+                ->setUsedFallback((bool) $questionsResult['fallbackUsed'])
                 ->setLatencyMs((int) ((microtime(true) - $start) * 1000));
             $this->entityManager->persist($jobLog);
             $this->entityManager->flush();
@@ -333,11 +351,12 @@ class LessonWorkflowService
             if (isset($quiz) && $quiz instanceof Quiz) {
                 $this->thirdPartyMetaService->record(
                     $quiz,
-                    ThirdPartyProvider::OpenAi,
+                    $this->learningAiService->providerState()['active'],
                     ThirdPartyStatus::Failed,
                     'Quiz generation failed: '.$exception->getMessage(),
                     ['error' => $exception->getMessage()],
                 );
+                $this->entityThirdPartyLinkRecorder->recordLinks($quiz);
             }
             $jobLog
                 ->setProviderStatus('FAILED')

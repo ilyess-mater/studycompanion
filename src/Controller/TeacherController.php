@@ -13,7 +13,7 @@ use App\Entity\TeacherProfile;
 use App\Enum\ThirdPartyProvider;
 use App\Enum\ThirdPartyStatus;
 use App\Form\StudyGroupType;
-use App\Form\TeacherCommentType;
+use App\Service\EntityThirdPartyLinkRecorder;
 use App\Service\InviteCodeGenerator;
 use App\Service\PerspectiveModerationService;
 use App\Service\ThirdPartyMetaService;
@@ -41,10 +41,7 @@ class TeacherController extends AbstractController
         $lessons = $this->findTeacherLessons($entityManager, $teacher, 8);
         $students = $this->findTeacherStudents($entityManager, $teacher);
 
-        $studentsCount = 0;
-        foreach ($groups as $group) {
-            $studentsCount += $group->getStudents()->count();
-        }
+        $studentsCount = count($students);
 
         $reports = $entityManager->createQueryBuilder()
             ->select('r', 's', 'u', 'l')
@@ -52,8 +49,8 @@ class TeacherController extends AbstractController
             ->join('r.student', 's')
             ->join('s.user', 'u')
             ->join('r.lesson', 'l')
-            ->leftJoin('s.group', 'g')
-            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->join('s.group', 'g')
+            ->where('g.teacher = :teacher')
             ->setParameter('teacher', $teacher)
             ->orderBy('r.createdAt', 'DESC')
             ->setMaxResults(120)
@@ -127,6 +124,31 @@ class TeacherController extends AbstractController
         });
         $atRiskStudents = array_slice($atRiskStudents, 0, 6);
 
+        $latestReportByStudentId = [];
+        foreach ($reports as $report) {
+            $studentId = $report->getStudent()?->getId();
+            if ($studentId === null || isset($latestReportByStudentId[$studentId])) {
+                continue;
+            }
+            $latestReportByStudentId[$studentId] = $report;
+        }
+
+        $studentGroupRows = [];
+        foreach ($students as $student) {
+            $latest = $latestReportByStudentId[$student->getId()] ?? null;
+            $studentGroupRows[] = [
+                'student' => $student,
+                'studentName' => $student->getUser()?->getName() ?? 'Unknown',
+                'groupName' => $student->getGroup()?->getName() ?? 'No group',
+                'latestScore' => $latest?->getQuizScore(),
+                'latestMastery' => $latest?->getMasteryStatus()->value,
+                'lastActivityAt' => $latest?->getCreatedAt(),
+            ];
+        }
+        usort($studentGroupRows, static function (array $left, array $right): int {
+            return strcmp((string) $left['studentName'], (string) $right['studentName']);
+        });
+
         $groupInsights = [];
         foreach ($groups as $group) {
             $groupStudentIds = [];
@@ -178,6 +200,7 @@ class TeacherController extends AbstractController
                 'studentsWithoutGroup' => count(array_filter($students, static fn (StudentProfile $student): bool => $student->getGroup() === null)),
                 'topWeakTopics' => array_slice(array_keys($weakTopicFrequency), 0, 5),
                 'atRiskStudents' => $atRiskStudents,
+                'studentGroupRows' => $studentGroupRows,
                 'groupInsights' => $groupInsights,
                 'recentReports' => array_slice($reports, 0, 6),
             ],
@@ -191,6 +214,7 @@ class TeacherController extends AbstractController
         InviteCodeGenerator $inviteCodeGenerator,
         YouTubeRecommendationService $youtubeRecommendationService,
         ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
     ): Response {
         $teacher = $this->currentTeacherProfile();
         if ($teacher === null) {
@@ -229,6 +253,7 @@ class TeacherController extends AbstractController
                     ),
                 ],
             );
+            $entityThirdPartyLinkRecorder->recordLinks($group);
 
             $entityManager->persist($group);
             $entityManager->flush();
@@ -341,6 +366,7 @@ class TeacherController extends AbstractController
         EntityManagerInterface $entityManager,
         PerspectiveModerationService $moderationService,
         ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
     ): Response {
         $teacher = $this->currentTeacherProfile();
         if ($teacher === null) {
@@ -413,6 +439,7 @@ class TeacherController extends AbstractController
             null,
             $moderation['latencyMs'],
         );
+        $entityThirdPartyLinkRecorder->recordLinks($comment);
 
         $entityManager->persist($comment);
         $entityManager->flush();
@@ -423,6 +450,171 @@ class TeacherController extends AbstractController
         $this->addFlash('success', 'Comment saved for '.$student->getUser()?->getName().'.');
 
         return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+    }
+
+    #[Route('/lessons/{lessonId}/comments/{commentId}/edit', name: 'teacher_lesson_comment_edit', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
+    public function editLessonComment(
+        int $lessonId,
+        int $commentId,
+        Request $request,
+        EntityManagerInterface $entityManager,
+        PerspectiveModerationService $moderationService,
+        ThirdPartyMetaService $thirdPartyMetaService,
+        EntityThirdPartyLinkRecorder $entityThirdPartyLinkRecorder,
+    ): Response {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('teacher_comment_edit_'.$commentId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
+        if (!$lesson instanceof Lesson || !$this->lessonBelongsToTeacher($lesson, $teacher)) {
+            throw $this->createAccessDeniedException('You can only edit comments on lessons uploaded by your students.');
+        }
+
+        $comment = $entityManager->getRepository(TeacherComment::class)->find($commentId);
+        if (!$comment instanceof TeacherComment || $comment->getLesson()?->getId() !== $lesson->getId()) {
+            throw $this->createNotFoundException('Comment not found.');
+        }
+
+        if (!$comment->isTeacherAuthor() || $comment->getTeacher()?->getId() !== $teacher->getId()) {
+            throw $this->createAccessDeniedException('You can edit only your own comments.');
+        }
+
+        $student = $comment->getStudent();
+        if (!$student instanceof StudentProfile || !$this->studentBelongsToTeacher($student, $teacher)) {
+            throw $this->createAccessDeniedException('Comment student is outside your groups.');
+        }
+
+        $content = trim((string) $request->request->get('content', ''));
+        if (mb_strlen($content) < 3 || mb_strlen($content) > 3000) {
+            $this->addFlash('error', 'Comment must contain between 3 and 3000 characters.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+        }
+
+        $moderation = $moderationService->moderate($content);
+        if ($moderation['allowed'] !== true) {
+            $this->addFlash('error', 'Comment blocked by moderation policy.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+        }
+
+        $comment
+            ->setContent($content)
+            ->setUpdatedAt(new \DateTimeImmutable());
+
+        $thirdPartyMetaService->record(
+            $comment,
+            ThirdPartyProvider::GooglePerspective,
+            $moderation['status'],
+            $moderation['message'],
+            [
+                'score' => $moderation['score'],
+                'warn' => $moderation['warn'],
+                'action' => $moderation['action'],
+            ],
+            null,
+            $moderation['latencyMs'],
+        );
+        $entityThirdPartyLinkRecorder->recordLinks($comment);
+
+        $entityManager->flush();
+
+        if ($moderation['warn'] === true) {
+            $this->addFlash('success', 'Comment updated with moderation warning score.');
+        } else {
+            $this->addFlash('success', 'Comment updated.');
+        }
+
+        return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+    }
+
+    #[Route('/lessons/{lessonId}/comments/{commentId}/delete', name: 'teacher_lesson_comment_delete', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
+    public function deleteLessonComment(
+        int $lessonId,
+        int $commentId,
+        Request $request,
+        EntityManagerInterface $entityManager,
+    ): Response {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('teacher_comment_delete_'.$commentId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+        }
+
+        $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
+        if (!$lesson instanceof Lesson || !$this->lessonBelongsToTeacher($lesson, $teacher)) {
+            throw $this->createAccessDeniedException('You can only delete comments on lessons uploaded by your students.');
+        }
+
+        $comment = $entityManager->getRepository(TeacherComment::class)->find($commentId);
+        if (!$comment instanceof TeacherComment || $comment->getLesson()?->getId() !== $lesson->getId()) {
+            throw $this->createNotFoundException('Comment not found.');
+        }
+
+        if (!$comment->isTeacherAuthor() || $comment->getTeacher()?->getId() !== $teacher->getId()) {
+            throw $this->createAccessDeniedException('You can delete only your own comments.');
+        }
+
+        $student = $comment->getStudent();
+        if (!$student instanceof StudentProfile || !$this->studentBelongsToTeacher($student, $teacher)) {
+            throw $this->createAccessDeniedException('Comment student is outside your groups.');
+        }
+
+        $entityManager->remove($comment);
+        $entityManager->flush();
+
+        $this->addFlash('success', 'Comment deleted.');
+
+        return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+    }
+
+    #[Route('/groups/{groupId}/students/{studentId}/remove', name: 'teacher_group_student_remove', requirements: ['groupId' => '\\d+', 'studentId' => '\\d+'], methods: ['POST'])]
+    public function removeStudentFromGroup(
+        int $groupId,
+        int $studentId,
+        Request $request,
+        EntityManagerInterface $entityManager,
+    ): Response {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        if (!$this->isCsrfTokenValid('teacher_group_remove_student_'.$groupId.'_'.$studentId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid security token.');
+
+            return $this->redirectToRoute('teacher_group_show', ['id' => $groupId]);
+        }
+
+        $group = $entityManager->getRepository(StudyGroup::class)->find($groupId);
+        if (!$group instanceof StudyGroup || $group->getTeacher()?->getId() !== $teacher->getId()) {
+            throw $this->createNotFoundException('Group not found.');
+        }
+
+        $student = $entityManager->getRepository(StudentProfile::class)->find($studentId);
+        if (!$student instanceof StudentProfile || $student->getGroup()?->getId() !== $group->getId()) {
+            throw $this->createAccessDeniedException('Student is not assigned to this group.');
+        }
+
+        $student->setGroup(null);
+        $entityManager->flush();
+
+        $this->addFlash('success', 'Student removed from group.');
+
+        return $this->redirectToRoute('teacher_group_show', ['id' => $groupId]);
     }
 
     #[Route('/reports', name: 'teacher_reports')]
@@ -439,8 +631,8 @@ class TeacherController extends AbstractController
             ->join('r.student', 's')
             ->join('s.user', 'u')
             ->join('r.lesson', 'l')
-            ->leftJoin('s.group', 'g')
-            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->join('s.group', 'g')
+            ->where('g.teacher = :teacher')
             ->setParameter('teacher', $teacher)
             ->orderBy('r.createdAt', 'DESC')
             ->getQuery()
@@ -454,10 +646,7 @@ class TeacherController extends AbstractController
     #[Route('/students/{id}', name: 'teacher_student_show', requirements: ['id' => '\\d+'])]
     public function studentShow(
         int $id,
-        Request $request,
         EntityManagerInterface $entityManager,
-        PerspectiveModerationService $moderationService,
-        ThirdPartyMetaService $thirdPartyMetaService,
     ): Response {
         $teacher = $this->currentTeacherProfile();
         if ($teacher === null) {
@@ -470,44 +659,7 @@ class TeacherController extends AbstractController
         }
 
         if (!$this->studentBelongsToTeacher($student, $teacher)) {
-            throw $this->createAccessDeniedException('You can only view students assigned to you or currently unassigned.');
-        }
-
-        $comment = new TeacherComment();
-        $form = $this->createForm(TeacherCommentType::class, $comment);
-        $form->handleRequest($request);
-
-        if ($form->isSubmitted() && $form->isValid()) {
-            $moderation = $moderationService->moderate($comment->getContent());
-            if ($moderation['allowed'] !== true) {
-                $this->addFlash('error', 'Comment blocked by moderation policy.');
-
-                return $this->redirectToRoute('teacher_student_show', ['id' => $student->getId()]);
-            }
-
-            $comment
-                ->setTeacher($teacher)
-                ->setStudent($student)
-                ->setAuthorRole(TeacherComment::AUTHOR_TEACHER);
-            $thirdPartyMetaService->record(
-                $comment,
-                ThirdPartyProvider::GooglePerspective,
-                $moderation['status'],
-                $moderation['message'],
-                [
-                    'score' => $moderation['score'],
-                    'warn' => $moderation['warn'],
-                    'action' => $moderation['action'],
-                ],
-                null,
-                $moderation['latencyMs'],
-            );
-            $entityManager->persist($comment);
-            $entityManager->flush();
-
-            $this->addFlash('success', 'Comment added.');
-
-            return $this->redirectToRoute('teacher_student_show', ['id' => $student->getId()]);
+            throw $this->createAccessDeniedException('You can only view students assigned to your groups.');
         }
 
         $reports = $entityManager->getRepository(PerformanceReport::class)->findBy(
@@ -516,17 +668,24 @@ class TeacherController extends AbstractController
             20,
         );
 
-        $comments = $entityManager->getRepository(TeacherComment::class)->findBy(
-            ['student' => $student, 'teacher' => $teacher],
-            ['createdAt' => 'DESC'],
-            20,
-        );
+        $comments = $entityManager->createQueryBuilder()
+            ->select('c', 'l')
+            ->from(TeacherComment::class, 'c')
+            ->leftJoin('c.lesson', 'l')
+            ->where('c.student = :student')
+            ->andWhere('c.teacher = :teacher')
+            ->andWhere('c.lesson IS NOT NULL')
+            ->setParameter('student', $student)
+            ->setParameter('teacher', $teacher)
+            ->orderBy('c.createdAt', 'DESC')
+            ->setMaxResults(40)
+            ->getQuery()
+            ->getResult();
 
         return $this->render('teacher/student_show.html.twig', [
             'student' => $student,
             'reports' => $reports,
             'comments' => $comments,
-            'commentForm' => $form,
         ]);
     }
 
@@ -551,8 +710,8 @@ class TeacherController extends AbstractController
             ->from(Lesson::class, 'l')
             ->join('l.uploadedBy', 's')
             ->join('s.user', 'u')
-            ->leftJoin('s.group', 'g')
-            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->join('s.group', 'g')
+            ->where('g.teacher = :teacher')
             ->setParameter('teacher', $teacher)
             ->orderBy('l.createdAt', 'DESC');
 
@@ -572,8 +731,8 @@ class TeacherController extends AbstractController
             ->select('s', 'u', 'g')
             ->from(StudentProfile::class, 's')
             ->join('s.user', 'u')
-            ->leftJoin('s.group', 'g')
-            ->where('g.teacher = :teacher OR g.id IS NULL')
+            ->join('s.group', 'g')
+            ->where('g.teacher = :teacher')
             ->setParameter('teacher', $teacher)
             ->orderBy('u.name', 'ASC')
             ->getQuery()
@@ -591,7 +750,7 @@ class TeacherController extends AbstractController
     {
         $group = $student->getGroup();
         if ($group === null) {
-            return true;
+            return false;
         }
 
         return $group->getTeacher()?->getId() === $teacher->getId();
