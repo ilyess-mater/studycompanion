@@ -50,6 +50,7 @@ class PagesWorkflowsTest extends WebTestCase
         $routes = [
             '/student/dashboard',
             '/student/lessons',
+            '/student/comments?lesson='.$scenario['lessonId'],
             '/student/lessons/'.$scenario['lessonId'],
             '/student/reports',
             '/student/groups/join',
@@ -75,8 +76,12 @@ class PagesWorkflowsTest extends WebTestCase
 
         $lessonShow = $this->client->request('GET', '/student/lessons/'.$scenario['lessonId']);
         self::assertResponseIsSuccessful();
-        self::assertGreaterThan(0, $lessonShow->filter('.chat-thread')->count());
-        self::assertGreaterThan(0, $lessonShow->filter('.chat-row-peer')->count());
+        self::assertGreaterThan(0, $lessonShow->filter('a[href="/student/comments?lesson='.$scenario['lessonId'].'"]')->count());
+
+        $studentComments = $this->client->request('GET', '/student/comments?lesson='.$scenario['lessonId']);
+        self::assertResponseIsSuccessful();
+        self::assertGreaterThan(0, $studentComments->filter('.chat-thread')->count());
+        self::assertGreaterThan(0, $studentComments->filter('.chat-row-peer')->count());
 
         $reportPage = $this->client->request('GET', '/student/reports');
         self::assertResponseIsSuccessful();
@@ -100,6 +105,7 @@ class PagesWorkflowsTest extends WebTestCase
             '/teacher/groups',
             '/teacher/groups/'.$scenario['groupId'],
             '/teacher/lessons',
+            '/teacher/comments?lesson='.$scenario['lessonId'],
             '/teacher/lessons/'.$scenario['lessonId'],
             '/teacher/reports',
             '/teacher/students/'.$scenario['studentProfileId'],
@@ -119,7 +125,11 @@ class PagesWorkflowsTest extends WebTestCase
 
         $teacherLesson = $this->client->request('GET', '/teacher/lessons/'.$scenario['lessonId']);
         self::assertResponseIsSuccessful();
-        self::assertGreaterThan(0, $teacherLesson->filter('.chat-thread')->count());
+        self::assertGreaterThan(0, $teacherLesson->filter('a[href="/teacher/comments?lesson='.$scenario['lessonId'].'"]')->count());
+
+        $teacherComments = $this->client->request('GET', '/teacher/comments?lesson='.$scenario['lessonId']);
+        self::assertResponseIsSuccessful();
+        self::assertGreaterThan(0, $teacherComments->filter('.chat-thread')->count());
 
         $groupsPage = $this->client->request('GET', '/teacher/groups');
         $groupForm = $groupsPage->selectButton('Create group')->form([
@@ -135,14 +145,14 @@ class PagesWorkflowsTest extends WebTestCase
         self::assertArrayHasKey('YOUTUBE', ($newGroup->getThirdPartyMeta() ?? [])['integrations'] ?? []);
         self::assertArrayHasKey('WEB_LINK', ($newGroup->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
-        $crawler = $this->client->request('GET', '/teacher/lessons/'.$scenario['lessonId']);
+        $crawler = $this->client->request('GET', '/teacher/comments?lesson='.$scenario['lessonId']);
         $form = $crawler->selectButton('Save Comment')->form([
             'student_id' => (string) $scenario['studentProfileId'],
             'content' => 'Good progress, review weak topics tomorrow.',
         ]);
 
         $this->client->submit($form);
-        self::assertResponseRedirects('/teacher/lessons/'.$scenario['lessonId']);
+        self::assertResponseRedirects('/teacher/comments?lesson='.$scenario['lessonId']);
 
         $this->client->followRedirect();
         self::assertResponseIsSuccessful();
@@ -175,13 +185,15 @@ class PagesWorkflowsTest extends WebTestCase
         $teacherUser = $scenario['teacherUser'];
         $this->client->loginUser($teacherUser);
 
-        $crawler = $this->client->request('GET', '/teacher/lessons/'.$scenario['lessonId']);
+        $crawler = $this->client->request('GET', '/teacher/comments?lesson='.$scenario['lessonId']);
+        self::assertGreaterThan(0, $crawler->filter('[data-chat-actions-menu]')->count());
+        self::assertGreaterThan(0, $crawler->filter('[data-chat-actions-edit-form]')->count());
         $editSelector = sprintf('form[action="/teacher/lessons/%d/comments/%d/edit"]', $scenario['lessonId'], $teacherComment->getId());
         $editForm = $crawler->filter($editSelector)->form([
             'content' => 'Edited teacher feedback message.',
         ]);
         $this->client->submit($editForm);
-        self::assertResponseRedirects('/teacher/lessons/'.$scenario['lessonId']);
+        self::assertResponseRedirects('/teacher/comments?lesson='.$scenario['lessonId']);
 
         $entityManager->clear();
         $updatedTeacherComment = $entityManager->getRepository(TeacherComment::class)->find($teacherComment->getId());
@@ -193,13 +205,13 @@ class PagesWorkflowsTest extends WebTestCase
         $studentUser = $scenario['studentUser'];
         $this->client->loginUser($studentUser);
 
-        $crawler = $this->client->request('GET', '/student/lessons/'.$scenario['lessonId']);
+        $crawler = $this->client->request('GET', '/student/comments?lesson='.$scenario['lessonId']);
         $replySelector = sprintf('form[action="/student/lessons/%d/comments/%d/reply"]', $scenario['lessonId'], $teacherComment->getId());
         $replyForm = $crawler->filter($replySelector)->form([
             'content' => 'Student reply message.',
         ]);
         $this->client->submit($replyForm);
-        self::assertResponseRedirects('/student/lessons/'.$scenario['lessonId']);
+        self::assertResponseRedirects('/student/comments?lesson='.$scenario['lessonId']);
 
         $entityManager->clear();
         $studentReply = $entityManager->getRepository(TeacherComment::class)->findOneBy(
@@ -209,13 +221,15 @@ class PagesWorkflowsTest extends WebTestCase
         self::assertNotNull($studentReply);
         self::assertArrayHasKey('WEB_LINK', ($studentReply->getThirdPartyMeta() ?? [])['integrations'] ?? []);
 
-        $crawler = $this->client->request('GET', '/student/lessons/'.$scenario['lessonId']);
+        $crawler = $this->client->request('GET', '/student/comments?lesson='.$scenario['lessonId']);
+        self::assertGreaterThan(0, $crawler->filter('[data-chat-actions-menu]')->count());
+        self::assertGreaterThan(0, $crawler->filter('[data-chat-actions-edit-form]')->count());
         $studentEditSelector = sprintf('form[action="/student/lessons/%d/comments/%d/edit"]', $scenario['lessonId'], $studentReply->getId());
         $studentEditForm = $crawler->filter($studentEditSelector)->form([
             'content' => 'Student reply edited text.',
         ]);
         $this->client->submit($studentEditForm);
-        self::assertResponseRedirects('/student/lessons/'.$scenario['lessonId']);
+        self::assertResponseRedirects('/student/comments?lesson='.$scenario['lessonId']);
 
         $entityManager->clear();
         $updatedReply = $entityManager->getRepository(TeacherComment::class)->find($studentReply->getId());
@@ -223,21 +237,21 @@ class PagesWorkflowsTest extends WebTestCase
         self::assertSame('Student reply edited text.', $updatedReply->getContent());
         self::assertNotNull($updatedReply->getUpdatedAt());
 
-        $crawler = $this->client->request('GET', '/student/lessons/'.$scenario['lessonId']);
+        $crawler = $this->client->request('GET', '/student/comments?lesson='.$scenario['lessonId']);
         $studentDeleteSelector = sprintf('form[action="/student/lessons/%d/comments/%d/delete"]', $scenario['lessonId'], $studentReply->getId());
         $studentDeleteForm = $crawler->filter($studentDeleteSelector)->form();
         $this->client->submit($studentDeleteForm);
-        self::assertResponseRedirects('/student/lessons/'.$scenario['lessonId']);
+        self::assertResponseRedirects('/student/comments?lesson='.$scenario['lessonId']);
 
         $entityManager->clear();
         self::assertNull($entityManager->getRepository(TeacherComment::class)->find($studentReply->getId()));
 
         $this->client->loginUser($teacherUser);
-        $crawler = $this->client->request('GET', '/teacher/lessons/'.$scenario['lessonId']);
+        $crawler = $this->client->request('GET', '/teacher/comments?lesson='.$scenario['lessonId']);
         $deleteSelector = sprintf('form[action="/teacher/lessons/%d/comments/%d/delete"]', $scenario['lessonId'], $teacherComment->getId());
         $deleteForm = $crawler->filter($deleteSelector)->form();
         $this->client->submit($deleteForm);
-        self::assertResponseRedirects('/teacher/lessons/'.$scenario['lessonId']);
+        self::assertResponseRedirects('/teacher/comments?lesson='.$scenario['lessonId']);
 
         $entityManager->clear();
         self::assertNull($entityManager->getRepository(TeacherComment::class)->find($teacherComment->getId()));

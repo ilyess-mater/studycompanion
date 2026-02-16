@@ -3,11 +3,14 @@ import { Controller } from "@hotwired/stimulus";
 export default class extends Controller {
     connect() {
         this.boundOutsideClick = this.handleOutsideClick.bind(this);
+        this.boundEscapeKey = this.handleEscapeKey.bind(this);
         document.addEventListener("click", this.boundOutsideClick);
+        document.addEventListener("keydown", this.boundEscapeKey);
     }
 
     disconnect() {
         document.removeEventListener("click", this.boundOutsideClick);
+        document.removeEventListener("keydown", this.boundEscapeKey);
     }
 
     toggleMenu(event) {
@@ -30,6 +33,7 @@ export default class extends Controller {
         }
 
         const shouldOpen = menu.hidden;
+        this.closeAllEditForms();
         this.closeAllMenus();
         menu.hidden = !shouldOpen;
     }
@@ -51,7 +55,11 @@ export default class extends Controller {
             return;
         }
 
-        form.hidden = !form.hidden;
+        const shouldOpen = form.hidden;
+        this.closeAllEditForms();
+        if (shouldOpen) {
+            form.hidden = false;
+        }
         this.closeAllMenus();
     }
 
@@ -83,6 +91,7 @@ export default class extends Controller {
 
         if (!this.element.contains(target)) {
             this.closeAllMenus();
+            this.closeAllEditForms();
             return;
         }
 
@@ -91,9 +100,24 @@ export default class extends Controller {
             target.closest("[data-chat-actions-menu]");
         const withinToggle =
             target instanceof Element && target.closest(".chat-actions-btn");
+        const withinEditForm =
+            target instanceof Element &&
+            target.closest("[data-chat-actions-edit-form]");
         if (!withinMenu && !withinToggle) {
             this.closeAllMenus();
+            if (!withinEditForm) {
+                this.closeAllEditForms();
+            }
         }
+    }
+
+    handleEscapeKey(event) {
+        if (event.key !== "Escape") {
+            return;
+        }
+
+        this.closeAllMenus();
+        this.closeAllEditForms();
     }
 
     closeAllMenus() {
@@ -102,6 +126,16 @@ export default class extends Controller {
             .forEach((menu) => {
                 if (menu instanceof HTMLElement) {
                     menu.hidden = true;
+                }
+            });
+    }
+
+    closeAllEditForms() {
+        this.element
+            .querySelectorAll("[data-chat-actions-edit-form]")
+            .forEach((form) => {
+                if (form instanceof HTMLElement) {
+                    form.hidden = true;
                 }
             });
     }

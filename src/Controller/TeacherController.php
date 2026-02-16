@@ -304,6 +304,84 @@ class TeacherController extends AbstractController
         ]);
     }
 
+    #[Route('/comments', name: 'teacher_comments')]
+    public function comments(Request $request, EntityManagerInterface $entityManager): Response
+    {
+        $teacher = $this->currentTeacherProfile();
+        if ($teacher === null) {
+            throw $this->createAccessDeniedException('Teacher profile missing.');
+        }
+
+        $lessons = $this->findTeacherLessons($entityManager, $teacher);
+
+        $selectedLesson = null;
+        $requestedLessonId = (int) $request->query->get('lesson', 0);
+        foreach ($lessons as $candidateLesson) {
+            if ($requestedLessonId > 0 && $candidateLesson->getId() === $requestedLessonId) {
+                $selectedLesson = $candidateLesson;
+                break;
+            }
+        }
+
+        if ($selectedLesson === null && $lessons !== []) {
+            $selectedLesson = $lessons[0];
+        }
+
+        $reports = [];
+        $commentsByStudent = [];
+
+        if ($selectedLesson instanceof Lesson) {
+            $rawReports = $entityManager->createQueryBuilder()
+                ->select('r', 's', 'u')
+                ->from(PerformanceReport::class, 'r')
+                ->join('r.student', 's')
+                ->join('s.user', 'u')
+                ->join('s.group', 'g')
+                ->where('r.lesson = :lesson')
+                ->andWhere('g.teacher = :teacher')
+                ->setParameter('lesson', $selectedLesson)
+                ->setParameter('teacher', $teacher)
+                ->orderBy('r.createdAt', 'DESC')
+                ->getQuery()
+                ->getResult();
+
+            $latestReportByStudent = [];
+            foreach ($rawReports as $report) {
+                $studentId = $report->getStudent()?->getId();
+                if ($studentId === null || isset($latestReportByStudent[$studentId])) {
+                    continue;
+                }
+                $latestReportByStudent[$studentId] = $report;
+            }
+            $reports = array_values($latestReportByStudent);
+
+            $lessonComments = $entityManager->getRepository(TeacherComment::class)->findBy(
+                ['lesson' => $selectedLesson, 'teacher' => $teacher],
+                ['createdAt' => 'ASC'],
+            );
+
+            foreach ($lessonComments as $comment) {
+                $student = $comment->getStudent();
+                $studentId = $student?->getId();
+                if ($studentId === null || !$this->studentBelongsToTeacher($student, $teacher)) {
+                    continue;
+                }
+
+                if (!isset($commentsByStudent[$studentId])) {
+                    $commentsByStudent[$studentId] = [];
+                }
+                $commentsByStudent[$studentId][] = $comment;
+            }
+        }
+
+        return $this->render('teacher/comments.html.twig', [
+            'lessons' => $lessons,
+            'selectedLesson' => $selectedLesson,
+            'reports' => $reports,
+            'commentsByStudent' => $commentsByStudent,
+        ]);
+    }
+
     #[Route('/lessons/{id}', name: 'teacher_lesson_show', requirements: ['id' => '\\d+'])]
     public function lessonShow(int $id, EntityManagerInterface $entityManager): Response
     {
@@ -376,7 +454,7 @@ class TeacherController extends AbstractController
         if (!$this->isCsrfTokenValid('teacher_lesson_comment_'.$id, (string) $request->request->get('_token'))) {
             $this->addFlash('error', 'Invalid security token.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+            return $this->redirectAfterCommentAction($request, $id);
         }
 
         $lesson = $entityManager->getRepository(Lesson::class)->find($id);
@@ -398,14 +476,14 @@ class TeacherController extends AbstractController
         if (mb_strlen($content) < 3) {
             $this->addFlash('error', 'Comment must contain at least 3 characters.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+            return $this->redirectAfterCommentAction($request, $id);
         }
 
         $moderation = $moderationService->moderate($content);
         if ($moderation['allowed'] !== true) {
             $this->addFlash('error', 'Comment blocked by moderation policy.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+            return $this->redirectAfterCommentAction($request, $id);
         }
 
         $parentCommentId = (int) $request->request->get('parent_comment_id', 0);
@@ -449,7 +527,7 @@ class TeacherController extends AbstractController
         }
         $this->addFlash('success', 'Comment saved for '.$student->getUser()?->getName().'.');
 
-        return $this->redirectToRoute('teacher_lesson_show', ['id' => $id]);
+        return $this->redirectAfterCommentAction($request, $id);
     }
 
     #[Route('/lessons/{lessonId}/comments/{commentId}/edit', name: 'teacher_lesson_comment_edit', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
@@ -470,7 +548,7 @@ class TeacherController extends AbstractController
         if (!$this->isCsrfTokenValid('teacher_comment_edit_'.$commentId, (string) $request->request->get('_token'))) {
             $this->addFlash('error', 'Invalid security token.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+            return $this->redirectAfterCommentAction($request, $lessonId);
         }
 
         $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
@@ -496,14 +574,14 @@ class TeacherController extends AbstractController
         if (mb_strlen($content) < 3 || mb_strlen($content) > 3000) {
             $this->addFlash('error', 'Comment must contain between 3 and 3000 characters.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+            return $this->redirectAfterCommentAction($request, $lessonId);
         }
 
         $moderation = $moderationService->moderate($content);
         if ($moderation['allowed'] !== true) {
             $this->addFlash('error', 'Comment blocked by moderation policy.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+            return $this->redirectAfterCommentAction($request, $lessonId);
         }
 
         $comment
@@ -533,7 +611,7 @@ class TeacherController extends AbstractController
             $this->addFlash('success', 'Comment updated.');
         }
 
-        return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+        return $this->redirectAfterCommentAction($request, $lessonId);
     }
 
     #[Route('/lessons/{lessonId}/comments/{commentId}/delete', name: 'teacher_lesson_comment_delete', requirements: ['lessonId' => '\\d+', 'commentId' => '\\d+'], methods: ['POST'])]
@@ -551,7 +629,7 @@ class TeacherController extends AbstractController
         if (!$this->isCsrfTokenValid('teacher_comment_delete_'.$commentId, (string) $request->request->get('_token'))) {
             $this->addFlash('error', 'Invalid security token.');
 
-            return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+            return $this->redirectAfterCommentAction($request, $lessonId);
         }
 
         $lesson = $entityManager->getRepository(Lesson::class)->find($lessonId);
@@ -578,7 +656,7 @@ class TeacherController extends AbstractController
 
         $this->addFlash('success', 'Comment deleted.');
 
-        return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
+        return $this->redirectAfterCommentAction($request, $lessonId);
     }
 
     #[Route('/groups/{groupId}/students/{studentId}/remove', name: 'teacher_group_student_remove', requirements: ['groupId' => '\\d+', 'studentId' => '\\d+'], methods: ['POST'])]
@@ -754,6 +832,21 @@ class TeacherController extends AbstractController
         }
 
         return $group->getTeacher()?->getId() === $teacher->getId();
+    }
+
+    private function redirectAfterCommentAction(Request $request, int $lessonId): Response
+    {
+        $returnPage = strtolower(trim((string) $request->request->get('return_page', '')));
+        if ($returnPage === 'comments') {
+            $returnLesson = (int) $request->request->get('return_lesson', $lessonId);
+            if ($returnLesson <= 0) {
+                $returnLesson = $lessonId;
+            }
+
+            return $this->redirectToRoute('teacher_comments', ['lesson' => $returnLesson]);
+        }
+
+        return $this->redirectToRoute('teacher_lesson_show', ['id' => $lessonId]);
     }
 }
 

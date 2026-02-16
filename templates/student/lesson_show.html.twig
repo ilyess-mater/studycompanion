@@ -26,6 +26,7 @@
                 <input type="hidden" name="_token" value="{{ csrf_token('regenerate_quiz_' ~ lesson.id) }}">
                 <button type="submit" class="btn">Generate New Quiz</button>
             </form>
+            <a href="{{ path('student_comments', {lesson: lesson.id}) }}" class="btn btn-primary" style="display:inline-flex;">Open Comments</a>
         </div>
     </section>
 
@@ -55,71 +56,9 @@
 
     <section class="card" style="margin-bottom:1rem;">
         <h2>Teacher Discussion</h2>
-        <div class="chat-container" data-controller="chat-actions">
-            <div class="chat-thread">
-                {% for comment in lessonComments %}
-                    {% set isMine = comment.authorRole == 'ROLE_STUDENT' %}
-                    <article class="chat-row {{ isMine ? 'chat-row-me' : 'chat-row-peer' }}">
-                        <div class="chat-bubble {{ isMine ? 'chat-bubble-me' : 'chat-bubble-peer' }}">
-                            <div class="chat-header">
-                                <strong class="chat-author">
-                                    {% if comment.authorRole == 'ROLE_TEACHER' %}
-                                        {{ comment.teacher and comment.teacher.user ? comment.teacher.user.name : 'Teacher' }}
-                                    {% else %}
-                                        You
-                                    {% endif %}
-                                </strong>
-                                <span class="chat-time">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
-                            </div>
-                            <p class="chat-text">{{ comment.content }}</p>
-                            {% if comment.updatedAt %}
-                                <span class="chat-edited">(edited)</span>
-                            {% endif %}
-                            {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
-                            {% if moderation %}
-                                <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
-                            {% endif %}
-                        </div>
-                        {% if isMine %}
-                            <button
-                                type="button"
-                                class="chat-actions-btn"
-                                data-action="chat-actions#toggleMenu"
-                                data-comment-id="{{ comment.id }}"
-                                aria-label="Message actions"
-                                title="Delete message"
-                            >⋯</button>
-                            <div class="chat-actions-menu" data-chat-actions-menu data-comment-id="{{ comment.id }}" hidden>
-                                <form method="post" action="{{ path('student_lesson_comment_delete', {lessonId: lesson.id, commentId: comment.id}) }}" onsubmit="return confirm('Delete this message?');">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('student_comment_delete_' ~ comment.id) }}">
-                                    <button type="submit" class="action-item action-delete">Delete</button>
-                                </form>
-                            </div>
-                        {% endif %}
-                    </article>
-                {% else %}
-                    <div class="chat-empty">
-                        <p class="note">No discussion yet for this lesson.</p>
-                    </div>
-                {% endfor %}
-            </div>
-
-            {% if lessonComments %}
-                {% set hasTeacherMessage = false %}
-                {% for comment in lessonComments %}
-                    {% if comment.authorRole == 'ROLE_TEACHER' %}
-                        {% set hasTeacherMessage = true %}
-                    {% endif %}
-                {% endfor %}
-
-                {% if hasTeacherMessage %}
-                    <form method="post" action="{{ path('student_lesson_comment_reply', {lessonId: lesson.id, commentId: lessonComments|last.id}) }}" class="chat-composer chat-composer-bottom">
-                        <input type="hidden" name="_token" value="{{ csrf_token('student_reply_comment_' ~ (lessonComments|last.id ?? 0)) }}">
-                        <textarea name="content" maxlength="2000" minlength="2" required placeholder="Type your reply..."></textarea>
-                        <button type="submit" class="btn-primary">Send</button>
-                    </form>
-                {% endif %}
-            {% endif %}
+        <p class="note">Discussion is available in the dedicated Comments page to keep lessons focused on study content.</p>
+        <div style="margin-top:.9rem;">
+            <a href="{{ path('student_comments', {lesson: lesson.id}) }}" class="btn btn-primary">Open Comments</a>
         </div>
     </section>
 

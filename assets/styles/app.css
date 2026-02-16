@@ -397,6 +397,11 @@ button[type="submit"] {
     box-shadow: var(--shadow-sm);
 }
 
+.list-item.is-active {
+    border-color: #b9d1f8;
+    background: linear-gradient(132deg, #e9f1ff, #e6fffc);
+}
+
 .form-grid {
     display: grid;
     gap: 1rem;
@@ -1821,8 +1826,18 @@ button[type="submit"]:hover,
     opacity: 1;
 }
 
+.chat-row-me .chat-actions-btn {
+    opacity: 1;
+}
+
 .chat-actions-btn:hover {
     background: rgba(255, 255, 255, 0.5);
+}
+
+.chat-action-wrap {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
 }
 
 .chat-actions-menu {
@@ -1840,6 +1855,10 @@ button[type="submit"]:hover,
     box-shadow: 0 8px 20px rgba(14, 41, 94, 0.15);
     z-index: 10;
     min-width: 140px;
+}
+
+.comments-grid {
+    grid-template-columns: minmax(260px, 350px) minmax(0, 1fr);
 }
 
 .chat-actions-menu form {
@@ -1874,8 +1893,13 @@ button[type="submit"]:hover,
     color: var(--ink);
 }
 
+.action-item.action-delete {
+    color: var(--danger);
+    font-weight: 600;
+}
+
 .action-item.action-delete:hover {
-    background: rgba(199, 53, 58, 0.1);
+    background: rgba(199, 53, 58, 0.15);
     color: var(--danger);
 }
 
@@ -2060,6 +2084,15 @@ button[type="submit"]:hover,
     color: #e5efff;
 }
 
+:root[data-theme="dark"] .action-item.action-delete {
+    color: #ff9398;
+}
+
+:root[data-theme="dark"] .action-item.action-delete:hover {
+    background: rgba(140, 24, 42, 0.35);
+    color: #ffb0be;
+}
+
 :root[data-theme="dark"] .third-party-success {
     background: rgba(26, 134, 102, 0.34);
     color: #9dffd7;
@@ -2156,5 +2189,9 @@ button[type="submit"]:hover,
 
     .chat-thread {
         max-height: 400px;
+    }
+
+    .comments-grid {
+        grid-template-columns: 1fr;
     }
 }

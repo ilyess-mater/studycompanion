@@ -45,6 +45,7 @@
                     {% if is_granted('ROLE_STUDENT') %}
                         <a class="sidebar-link {{ currentRoute == 'student_dashboard' ? 'is-active' : '' }}" href="{{ path('student_dashboard') }}">Dashboard</a>
                         <a class="sidebar-link {{ currentRoute starts with 'student_lessons' or currentRoute == 'student_lesson_show' ? 'is-active' : '' }}" href="{{ path('student_lessons') }}">Lessons</a>
+                        <a class="sidebar-link {{ currentRoute == 'student_comments' ? 'is-active' : '' }}" href="{{ path('student_comments') }}">Comments</a>
                         <a class="sidebar-link {{ currentRoute == 'student_reports' ? 'is-active' : '' }}" href="{{ path('student_reports') }}">Reports</a>
                         <a class="sidebar-link {{ currentRoute == 'student_group_join' ? 'is-active' : '' }}" href="{{ path('student_group_join') }}">Join Group</a>
                         <a class="sidebar-link {{ currentRoute == 'app_settings' ? 'is-active' : '' }}" href="{{ path('app_settings') }}">Settings</a>
@@ -53,6 +54,7 @@
                         <a class="sidebar-link {{ currentRoute == 'teacher_dashboard' ? 'is-active' : '' }}" href="{{ path('teacher_dashboard') }}">Dashboard</a>
                         <a class="sidebar-link {{ currentRoute starts with 'teacher_group' ? 'is-active' : '' }}" href="{{ path('teacher_groups') }}">Groups</a>
                         <a class="sidebar-link {{ currentRoute starts with 'teacher_lesson' ? 'is-active' : '' }}" href="{{ path('teacher_lessons') }}">Lessons</a>
+                        <a class="sidebar-link {{ currentRoute == 'teacher_comments' ? 'is-active' : '' }}" href="{{ path('teacher_comments') }}">Comments</a>
                         <a class="sidebar-link {{ currentRoute == 'teacher_reports' or currentRoute == 'teacher_student_show' ? 'is-active' : '' }}" href="{{ path('teacher_reports') }}">Reports</a>
                         <a class="sidebar-link {{ currentRoute == 'admin_health_check' ? 'is-active' : '' }}" href="{{ path('admin_health_check') }}">Health Check</a>
                         <a class="sidebar-link {{ currentRoute == 'app_settings' ? 'is-active' : '' }}" href="{{ path('app_settings') }}">Settings</a>

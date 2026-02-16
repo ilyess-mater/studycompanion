@@ -1,0 +1,147 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Comments | StudyCompanion+{% endblock %}
+
+{% block body %}
+    <section class="card" style="margin-bottom:1rem;">
+        <h1>Comments</h1>
+        <p>Select a lesson and discuss results with each student in messenger-style threads.</p>
+    </section>
+
+    <div class="grid grid-2 comments-grid">
+        <section class="card">
+            <h2>Lessons</h2>
+            <div class="list">
+                {% for lesson in lessons %}
+                    <a class="list-item {{ selectedLesson and selectedLesson.id == lesson.id ? 'is-active' : '' }}" href="{{ path('teacher_comments', {lesson: lesson.id}) }}">
+                        <div>
+                            <strong>{{ lesson.title }}</strong>
+                            <div class="note">{{ lesson.subject }} | {{ lesson.uploadedBy.user.name }}</div>
+                        </div>
+                        <span class="note">{{ lesson.createdAt|date('Y-m-d H:i') }}</span>
+                    </a>
+                {% else %}
+                    <p class="note">No lessons available for your groups.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card">
+            {% if selectedLesson %}
+                <div style="display:flex; justify-content:space-between; gap:.8rem; align-items:flex-start;">
+                    <div>
+                        <h2>{{ selectedLesson.title }}</h2>
+                        <p class="note">{{ selectedLesson.subject }} | {{ selectedLesson.createdAt|date('Y-m-d H:i') }}</p>
+                    </div>
+                    <a class="btn btn-sm" href="{{ path('teacher_lesson_show', {id: selectedLesson.id}) }}">Open Lesson</a>
+                </div>
+
+                <div class="list" style="margin-top:.85rem;">
+                    {% for report in reports %}
+                        {% set thread = commentsByStudent[report.student.id] ?? [] %}
+                        <article class="list-item" style="display:block;">
+                            <div style="display:flex; justify-content:space-between; gap:.8rem; align-items:flex-start; margin-bottom:.6rem;">
+                                <div>
+                                    <strong>{{ report.student.user.name }}</strong>
+                                    <div class="note">Score {{ report.quizScore }}% | {{ report.masteryStatus.value }}</div>
+                                    <div class="note">Weak topics: {{ report.weakTopics is not empty ? report.weakTopics|join(', ') : 'None' }}</div>
+                                </div>
+                                <a class="btn btn-sm" href="{{ path('teacher_student_show', {id: report.student.id}) }}">Student Profile</a>
+                            </div>
+
+                            <div class="chat-container" data-controller="chat-actions">
+                                <div class="chat-thread">
+                                    {% for comment in thread %}
+                                        {% set isMine = comment.authorRole == 'ROLE_TEACHER' %}
+                                        <article class="chat-row {{ isMine ? 'chat-row-me' : 'chat-row-peer' }}">
+                                            <div class="chat-bubble {{ isMine ? 'chat-bubble-me' : 'chat-bubble-peer' }}">
+                                                <div class="chat-header">
+                                                    <strong class="chat-author">{{ isMine ? 'You' : report.student.user.name }}</strong>
+                                                    <span class="chat-time">{{ comment.createdAt|date('Y-m-d H:i') }}</span>
+                                                </div>
+                                                <p class="chat-text">{{ comment.content }}</p>
+                                                {% if comment.updatedAt %}
+                                                    <span class="chat-edited">(edited)</span>
+                                                {% endif %}
+                                                {% set moderation = comment.thirdPartyMeta.integrations.GOOGLE_PERSPECTIVE ?? null %}
+                                                {% if moderation %}
+                                                    <div class="note">Moderation: {{ moderation.status }}{% if moderation.payload.score is defined %} | Score {{ moderation.payload.score }}{% endif %}</div>
+                                                {% endif %}
+                                            </div>
+                                            {% if isMine %}
+                                                <div class="chat-action-wrap">
+                                                    <button
+                                                        type="button"
+                                                        class="chat-actions-btn"
+                                                        data-action="chat-actions#toggleMenu"
+                                                        data-comment-id="{{ comment.id }}"
+                                                        aria-label="Message actions"
+                                                        title="Message actions"
+                                                    >...</button>
+                                                    <div class="chat-actions-menu" data-chat-actions-menu data-comment-id="{{ comment.id }}" hidden>
+                                                        <button
+                                                            type="button"
+                                                            class="action-item"
+                                                            data-action="chat-actions#toggleEdit"
+                                                            data-comment-id="{{ comment.id }}"
+                                                        >Edit message</button>
+                                                        <form method="post" action="{{ path('teacher_lesson_comment_delete', {lessonId: selectedLesson.id, commentId: comment.id}) }}" onsubmit="return confirm('Delete this message?');">
+                                                            <input type="hidden" name="_token" value="{{ csrf_token('teacher_comment_delete_' ~ comment.id) }}">
+                                                            <input type="hidden" name="return_page" value="comments">
+                                                            <input type="hidden" name="return_lesson" value="{{ selectedLesson.id }}">
+                                                            <button type="submit" class="action-item action-delete">Delete message</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            {% endif %}
+                                        </article>
+                                        {% if isMine %}
+                                            <form
+                                                method="post"
+                                                action="{{ path('teacher_lesson_comment_edit', {lessonId: selectedLesson.id, commentId: comment.id}) }}"
+                                                class="chat-edit-form"
+                                                data-chat-actions-edit-form
+                                                data-comment-id="{{ comment.id }}"
+                                                hidden
+                                            >
+                                                <input type="hidden" name="_token" value="{{ csrf_token('teacher_comment_edit_' ~ comment.id) }}">
+                                                <input type="hidden" name="return_page" value="comments">
+                                                <input type="hidden" name="return_lesson" value="{{ selectedLesson.id }}">
+                                                <textarea name="content" maxlength="3000" minlength="3" required>{{ comment.content }}</textarea>
+                                                <div class="chat-edit-actions">
+                                                    <button type="submit" class="btn btn-primary">Save</button>
+                                                    <button type="button" class="btn" data-action="chat-actions#cancelEdit" data-comment-id="{{ comment.id }}">Cancel</button>
+                                                </div>
+                                            </form>
+                                        {% endif %}
+                                    {% else %}
+                                        <div class="chat-empty">
+                                            <p class="note">No comments yet for this student on this lesson.</p>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+
+                                <form method="post" action="{{ path('teacher_lesson_comment_add', {id: selectedLesson.id}) }}" class="chat-composer chat-composer-bottom">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('teacher_lesson_comment_' ~ selectedLesson.id) }}">
+                                    <input type="hidden" name="student_id" value="{{ report.student.id }}">
+                                    {% if thread is not empty %}
+                                        <input type="hidden" name="parent_comment_id" value="{{ thread|last.id }}">
+                                    {% endif %}
+                                    <input type="hidden" name="return_page" value="comments">
+                                    <input type="hidden" name="return_lesson" value="{{ selectedLesson.id }}">
+                                    <textarea name="content" maxlength="3000" minlength="3" required placeholder="Write your feedback or reply..."></textarea>
+                                    <button type="submit" class="btn-primary">Save Comment</button>
+                                </form>
+                            </div>
+                        </article>
+                    {% else %}
+                        <p class="note">No student reports yet for this lesson.</p>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <h2>No Lesson Selected</h2>
+                <p class="note">Choose one lesson from the left to open discussion threads.</p>
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}
