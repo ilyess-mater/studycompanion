@@ -23,6 +23,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 html,
 body {
     min-height: 100%;
@@ -1243,22 +1247,22 @@ th {
 }
 
 :root[data-theme="dark"] {
-    --bg-main: #081127;
-    --bg-soft: #13284d;
-    --bg-accent: #12333f;
-    --glass-bg: rgba(12, 24, 45, 0.5);
-    --glass-bg-strong: rgba(9, 21, 39, 0.72);
-    --glass-border: rgba(143, 175, 232, 0.28);
-    --glass-shadow: rgba(0, 0, 0, 0.46);
-    --glass-highlight: rgba(180, 216, 255, 0.2);
-    --ink: #e3ecff;
-    --muted: #9bb0d4;
-    --border: rgba(118, 148, 202, 0.4);
-    --surface: rgba(12, 23, 42, 0.5);
-    --surface-soft: rgba(17, 31, 56, 0.66);
-    --brand-500: #78a7ff;
-    --brand-600: #8db5ff;
-    --teal-500: #5dd7ce;
+    --bg-main: #050505;
+    --bg-soft: #101214;
+    --bg-accent: #14181c;
+    --glass-bg: rgba(18, 19, 22, 0.62);
+    --glass-bg-strong: rgba(12, 13, 16, 0.8);
+    --glass-border: rgba(225, 235, 255, 0.12);
+    --glass-shadow: rgba(0, 0, 0, 0.7);
+    --glass-highlight: rgba(255, 255, 255, 0.08);
+    --ink: #eef2f9;
+    --muted: #a2adbd;
+    --border: rgba(231, 239, 255, 0.18);
+    --surface: rgba(18, 19, 23, 0.72);
+    --surface-soft: rgba(15, 16, 20, 0.82);
+    --brand-500: #4b8bff;
+    --brand-600: #6aa1ff;
+    --teal-500: #33bdb4;
 }
 
 body {
@@ -1284,15 +1288,15 @@ body {
     background:
         radial-gradient(
             circle at 9% 0%,
-            rgba(83, 125, 198, 0.38),
+            rgba(75, 139, 255, 0.14),
             transparent 40%
         ),
         radial-gradient(
             circle at 90% 100%,
-            rgba(48, 131, 132, 0.27),
+            rgba(51, 189, 180, 0.12),
             transparent 44%
         ),
-        linear-gradient(162deg, #060d1f, #0b1831 45%, #101f3b 100%);
+        linear-gradient(162deg, #030303, #0b0d10 45%, #101317 100%);
 }
 
 body::before {
@@ -1314,9 +1318,9 @@ body::before {
 :root[data-theme="dark"] body::before {
     background: linear-gradient(
         120deg,
-        rgba(166, 199, 255, 0.14),
+        rgba(255, 255, 255, 0.06),
         transparent 38%,
-        rgba(118, 220, 229, 0.08) 68%,
+        rgba(102, 201, 191, 0.05) 68%,
         transparent
     );
 }
@@ -1549,8 +1553,8 @@ button[type="submit"]:hover,
 :root[data-theme="dark"] .health-card {
     background: linear-gradient(
         150deg,
-        rgba(17, 35, 66, 0.72),
-        rgba(10, 24, 47, 0.54)
+        rgba(25, 27, 33, 0.72),
+        rgba(13, 14, 17, 0.56)
     );
 }
 
@@ -1562,17 +1566,31 @@ button[type="submit"]:hover,
 }
 
 :root[data-theme="dark"] .sidebar-link:hover {
-    background: rgba(33, 56, 94, 0.78);
-    border-color: rgba(132, 168, 230, 0.45);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(231, 239, 255, 0.24);
     color: #e5efff;
 }
 
 :root[data-theme="dark"] .sidebar-link.is-active {
     background: linear-gradient(
         132deg,
-        rgba(43, 74, 132, 0.82),
-        rgba(26, 108, 102, 0.74)
+        rgba(40, 52, 76, 0.9),
+        rgba(23, 83, 79, 0.84)
     );
+    color: #f2f7ff;
+}
+
+:root[data-theme="dark"] .list-item.is-active {
+    border-color: rgba(103, 136, 185, 0.6);
+    background: linear-gradient(
+        132deg,
+        rgba(46, 61, 88, 0.9),
+        rgba(22, 72, 68, 0.84)
+    );
+}
+
+:root[data-theme="dark"] .list-item.is-active strong,
+:root[data-theme="dark"] .list-item.is-active .note {
     color: #f2f7ff;
 }
 
@@ -1581,10 +1599,10 @@ button[type="submit"]:hover,
 :root[data-theme="dark"] .sidebar-logout {
     background: linear-gradient(
         130deg,
-        rgba(71, 125, 255, 0.82),
-        rgba(36, 190, 178, 0.76)
+        rgba(75, 139, 255, 0.82),
+        rgba(51, 189, 180, 0.76)
     );
-    border-color: rgba(145, 182, 255, 0.48);
+    border-color: rgba(156, 190, 255, 0.4);
     color: #f7fbff;
 }
 
@@ -1593,8 +1611,8 @@ button[type="submit"]:hover,
 :root[data-theme="dark"] .sidebar-logout:hover {
     background: linear-gradient(
         130deg,
-        rgba(85, 137, 255, 0.9),
-        rgba(44, 204, 192, 0.82)
+        rgba(90, 147, 255, 0.9),
+        rgba(56, 199, 190, 0.84)
     );
     color: #ffffff;
 }
@@ -1631,8 +1649,8 @@ button[type="submit"]:hover,
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] select,
 :root[data-theme="dark"] textarea {
-    background: rgba(10, 22, 41, 0.62);
-    border-color: rgba(131, 165, 220, 0.38);
+    background: rgba(10, 11, 14, 0.72);
+    border-color: rgba(229, 238, 255, 0.2);
     color: #e5f0ff;
 }
 
@@ -1640,9 +1658,9 @@ button[type="submit"]:hover,
 :root[data-theme="dark"] .pill,
 :root[data-theme="dark"] .auth-chips span,
 :root[data-theme="dark"] .hero-badges span {
-    background: rgba(18, 34, 64, 0.64);
-    border-color: rgba(123, 157, 217, 0.42);
-    color: #b8d2ff;
+    background: rgba(20, 24, 31, 0.72);
+    border-color: rgba(228, 237, 255, 0.22);
+    color: #cad8ee;
 }
 
 .settings-card {
@@ -1709,6 +1727,7 @@ button[type="submit"]:hover,
     flex-direction: column;
     gap: 0.8rem;
     height: 100%;
+    flex: 1;
 }
 
 .chat-thread {
@@ -1718,7 +1737,7 @@ button[type="submit"]:hover,
     padding: 0.8rem;
     background: var(--surface-soft);
     border-radius: 12px;
-    max-height: 500px;
+    max-height: none;
     overflow-y: auto;
 }
 
@@ -1838,6 +1857,7 @@ button[type="submit"]:hover,
     position: relative;
     display: flex;
     align-items: flex-end;
+    flex-shrink: 0;
 }
 
 .chat-actions-menu {
@@ -1857,8 +1877,30 @@ button[type="submit"]:hover,
     min-width: 140px;
 }
 
+.chat-actions-menu[hidden] {
+    display: none !important;
+}
+
 .comments-grid {
     grid-template-columns: minmax(260px, 350px) minmax(0, 1fr);
+}
+
+.comments-grid .card {
+    min-height: 500px;
+    display: flex;
+    flex-direction: column;
+}
+
+.comments-grid .card:last-child {
+    overflow: visible;
+}
+
+.comments-grid .list-item[style*="display:block"] {
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    flex-direction: column;
+    align-items: flex-start;
 }
 
 .chat-actions-menu form {
@@ -1924,6 +1966,10 @@ button[type="submit"]:hover,
     border-radius: 10px;
 }
 
+.chat-edit-form[hidden] {
+    display: none !important;
+}
+
 .chat-edit-form textarea {
     resize: vertical;
     min-height: 70px;
@@ -1942,6 +1988,7 @@ button[type="submit"]:hover,
 .chat-composer {
     display: grid;
     gap: 0.6rem;
+    width: 100%;
     padding: 1rem;
     border-radius: 12px;
     border: 1px solid var(--border);
@@ -1962,7 +2009,8 @@ button[type="submit"]:hover,
 }
 
 .chat-composer button {
-    align-self: flex-end;
+    align-self: stretch;
+    width: 100%;
 }
 
 .captcha-block {
@@ -2046,8 +2094,8 @@ button[type="submit"]:hover,
 :root[data-theme="dark"] .chat-bubble-peer {
     background: linear-gradient(
         145deg,
-        rgba(17, 31, 56, 0.84),
-        rgba(18, 37, 68, 0.8)
+        rgba(21, 24, 31, 0.9),
+        rgba(14, 16, 21, 0.88)
     );
 }
 
@@ -2066,13 +2114,13 @@ button[type="submit"]:hover,
 }
 
 :root[data-theme="dark"] .chat-composer {
-    background: rgba(18, 34, 64, 0.72);
-    border-color: rgba(121, 154, 214, 0.38);
+    background: rgba(13, 14, 18, 0.86);
+    border-color: rgba(228, 237, 255, 0.2);
 }
 
 :root[data-theme="dark"] .chat-actions-menu {
-    background: rgba(15, 29, 54, 0.95);
-    border-color: rgba(126, 162, 225, 0.42);
+    background: rgba(15, 17, 22, 0.96);
+    border-color: rgba(231, 239, 255, 0.2);
 }
 
 :root[data-theme="dark"] .action-item {
@@ -2080,7 +2128,7 @@ button[type="submit"]:hover,
 }
 
 :root[data-theme="dark"] .action-item:hover {
-    background: rgba(33, 56, 94, 0.78);
+    background: rgba(255, 255, 255, 0.08);
     color: #e5efff;
 }
 
@@ -2118,15 +2166,15 @@ button[type="submit"]:hover,
 }
 
 :root[data-theme="dark"] .third-party-link {
-    color: #bfdbff;
-    background: rgba(22, 40, 73, 0.62);
-    border-color: rgba(116, 150, 208, 0.44);
+    color: #cad8ee;
+    background: rgba(19, 22, 29, 0.7);
+    border-color: rgba(228, 237, 255, 0.24);
 }
 
 :root[data-theme="dark"] .third-party-link:hover {
-    color: #e5f1ff;
-    background: rgba(30, 55, 95, 0.74);
-    border-color: rgba(139, 179, 248, 0.58);
+    color: #e8f1ff;
+    background: rgba(27, 31, 41, 0.82);
+    border-color: rgba(238, 245, 255, 0.3);
 }
 
 :root[data-theme="dark"] .glow-text {
@@ -2193,5 +2241,9 @@ button[type="submit"]:hover,
 
     .comments-grid {
         grid-template-columns: 1fr;
+    }
+
+    .comments-grid .card {
+        min-height: auto;
     }
 }

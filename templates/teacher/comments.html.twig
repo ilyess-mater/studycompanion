@@ -39,7 +39,7 @@
                 <div class="list" style="margin-top:.85rem;">
                     {% for report in reports %}
                         {% set thread = commentsByStudent[report.student.id] ?? [] %}
-                        <article class="list-item" style="display:block;">
+                        <article class="list-item" style="display:contents;">
                             <div style="display:flex; justify-content:space-between; gap:.8rem; align-items:flex-start; margin-bottom:.6rem;">
                                 <div>
                                     <strong>{{ report.student.user.name }}</strong>

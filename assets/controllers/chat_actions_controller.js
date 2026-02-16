@@ -4,6 +4,8 @@ export default class extends Controller {
     connect() {
         this.boundOutsideClick = this.handleOutsideClick.bind(this);
         this.boundEscapeKey = this.handleEscapeKey.bind(this);
+        this.closeAllMenus();
+        this.closeAllEditForms();
         document.addEventListener("click", this.boundOutsideClick);
         document.addEventListener("keydown", this.boundEscapeKey);
     }
@@ -33,9 +35,13 @@ export default class extends Controller {
         }
 
         const shouldOpen = menu.hidden;
+
         this.closeAllEditForms();
         this.closeAllMenus();
-        menu.hidden = !shouldOpen;
+
+        if (shouldOpen) {
+            menu.hidden = false;
+        }
     }
 
     toggleEdit(event) {
@@ -55,9 +61,8 @@ export default class extends Controller {
             return;
         }
 
-        const shouldOpen = form.hidden;
         this.closeAllEditForms();
-        if (shouldOpen) {
+        if (form.hidden) {
             form.hidden = false;
         }
         this.closeAllMenus();
